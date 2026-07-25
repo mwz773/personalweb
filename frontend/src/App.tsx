@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import './App.css'
 import { getSession, signIn, signOut, type Session } from './lib/auth'
 import { readableError } from './lib/errors'
-import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, type SemanticSuggestion } from './lib/semantic'
+import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, searchPublishedContent, type PublicSemanticSearchResult, type SemanticSuggestion } from './lib/semantic'
 import {
   createNode,
   createNodeLink,
@@ -13,6 +13,7 @@ import {
   getPublishedNode,
   getPublishedNodes,
   getPublishedRelatedNodes,
+  getPublishedSemanticRelatedNodes,
   nodeTypeLabel,
   publicPath,
   relationshipLabel,
@@ -130,6 +131,7 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
       </section>
       <section className="content-index" aria-labelledby="content-heading">
         <div className="section-heading"><div><p className="eyebrow">Explore</p><h2 id="content-heading">Work and reflections</h2></div><span>{visibleNodes.length} published</span></div>
+        <SemanticSearch />
         <div className="filter-bar" aria-label="Filter published content">
           {(['all', 'reflection', 'project', 'article', 'book', 'music'] as PublicFilter[]).map((item) => <button className={filter === item ? 'filter-button is-active' : 'filter-button'} key={item} type="button" onClick={() => setFilter(item)}>{item === 'all' ? 'All' : item === 'music' ? 'Music' : `${nodeTypeLabel(item)}s`}</button>)}
         </div>
@@ -137,6 +139,35 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
       </section>
     </main>
   )
+}
+
+function SemanticSearch() {
+  const [query, setQuery] = useState('')
+  const [type, setType] = useState<PublicFilter>('all')
+  const [results, setResults] = useState<PublicSemanticSearchResult[] | null>(null)
+  const [error, setError] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const cleanQuery = query.trim()
+    if (cleanQuery.length < 2) {
+      setError('Enter at least two characters to search.')
+      return
+    }
+    setError('')
+    setIsSearching(true)
+    try {
+      setResults(await searchPublishedContent(cleanQuery, type === 'all' ? [] : [type]))
+    } catch (searchError) {
+      setError(readableError(searchError, 'Semantic search is unavailable right now.'))
+      setResults(null)
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  return <section className="semantic-search" aria-labelledby="semantic-search-heading"><p className="eyebrow">Find an idea</p><h3 id="semantic-search-heading">Search across the portfolio</h3><form onSubmit={handleSubmit}><label className="sr-only" htmlFor="semantic-query">Search published work</label><input id="semantic-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try “design research” or “creative practice”" /><label className="sr-only" htmlFor="semantic-type">Limit search to a content type</label><select id="semantic-type" value={type} onChange={(event) => setType(event.target.value as PublicFilter)}><option value="all">All types</option><option value="reflection">Reflections</option><option value="project">Projects</option><option value="article">Articles</option><option value="book">Books</option><option value="music">Music</option></select><button className="primary-button" type="submit" disabled={isSearching}>{isSearching ? 'Searching…' : 'Search'}</button></form>{error ? <p className="form-error" role="alert">{error}</p> : null}{results !== null && !isSearching && !results.length ? <p className="muted-copy">No published, embedded items matched that idea yet.</p> : null}{results?.length ? <div className="search-results" aria-live="polite">{results.map((result) => <article className="search-result" key={result.id}><p>{nodeTypeLabel(result.type)}</p><h4><a href={publicPath(result)}>{result.title}</a></h4><span>{result.summary}</span><blockquote>{result.excerpt}</blockquote></article>)}</div> : null}</section>
 }
 
 function NodeCards({ nodes }: { nodes: PortfolioNode[] }) {
@@ -156,12 +187,18 @@ function NodePage({ node }: { node: PortfolioNode | null }) {
     if (!nodeId) return
     const currentNodeId = nodeId
     async function loadRelated() {
-      try {
-        setRelated(await getPublishedRelatedNodes(currentNodeId))
-      } catch {
-        // This remains true until the owner completes the manual Phase C SQL setup.
-        setLinksUnavailable(true)
-      }
+      const [manual, semantic] = await Promise.allSettled([getPublishedRelatedNodes(currentNodeId), getPublishedSemanticRelatedNodes(currentNodeId)])
+      const candidates = [
+        ...(semantic.status === 'fulfilled' ? semantic.value : []),
+        ...(manual.status === 'fulfilled' ? manual.value : []),
+      ]
+      const seenNodeIds = new Set<string>()
+      setRelated(candidates.filter(({ node: relatedNode }) => {
+        if (seenNodeIds.has(relatedNode.id)) return false
+        seenNodeIds.add(relatedNode.id)
+        return true
+      }))
+      setLinksUnavailable(manual.status === 'rejected' && semantic.status === 'rejected')
     }
     void loadRelated()
   }, [nodeId])
@@ -256,10 +293,11 @@ function SemanticPanel({ node, onChanged }: { node: OwnerNode; onChanged: () => 
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
+  const [generationMessage, setGenerationMessage] = useState('')
   const [revision, setRevision] = useState(0)
-  async function handleEmbed() { setError(''); setIsEmbedding(true); try { await embedNode(node.id) } catch (embedError) { setError(readableError(embedError, 'Could not embed this item.')) } finally { await onChanged(); setIsEmbedding(false) } }
-  async function handleGenerate() { setError(''); setIsGenerating(true); try { await generateSuggestions(node.id); setRevision((current) => current + 1) } catch (suggestionError) { setError(readableError(suggestionError, 'Could not generate suggestions.')) } finally { setIsGenerating(false) } }
-  return <section className="semantic-panel" aria-labelledby="semantic-heading"><p className="eyebrow">Semantic status</p><h3 id="semantic-heading">{semanticStatusLabel(node)}</h3>{node.embedding_error ? <p className="form-error" role="alert">{node.embedding_error}</p> : null}{isSemanticApiConfigured ? <div className="editor-actions"><button className="quiet-button" type="button" onClick={() => void handleEmbed()} disabled={isEmbedding}>{isEmbedding ? 'Embedding…' : node.embedding_status === 'ready' ? 'Re-embed this item' : 'Embed this item'}</button><button className="primary-button" type="button" onClick={() => void handleGenerate()} disabled={isGenerating || node.embedding_status !== 'ready'}>{isGenerating ? 'Generating…' : 'Generate suggestions'}</button></div> : <p className="muted-copy">Start the local FastAPI service and set <code>VITE_SEMANTIC_API_URL</code> to enable embedding.</p>}{error ? <p className="form-error" role="alert">{error}</p> : null}<SuggestionsPanel node={node} revision={revision} /></section>
+  async function handleEmbed() { setError(''); setGenerationMessage(''); setIsEmbedding(true); try { await embedNode(node.id) } catch (embedError) { setError(readableError(embedError, 'Could not embed this item.')) } finally { await onChanged(); setIsEmbedding(false) } }
+  async function handleGenerate() { setError(''); setGenerationMessage(''); setIsGenerating(true); try { const { suggestion_count: suggestionCount } = await generateSuggestions(node.id); setGenerationMessage(suggestionCount ? `${suggestionCount} suggested connection${suggestionCount === 1 ? '' : 's'} generated.` : 'No candidates met the threshold. Embed at least two substantive items with related text, then try again.'); setRevision((current) => current + 1) } catch (suggestionError) { setError(readableError(suggestionError, 'Could not generate suggestions.')) } finally { setIsGenerating(false) } }
+  return <section className="semantic-panel" aria-labelledby="semantic-heading"><p className="eyebrow">Semantic status</p><h3 id="semantic-heading">{semanticStatusLabel(node)}</h3>{node.embedding_error ? <p className="form-error" role="alert">{node.embedding_error}</p> : null}{isSemanticApiConfigured ? <div className="editor-actions"><button className="quiet-button" type="button" onClick={() => void handleEmbed()} disabled={isEmbedding}>{isEmbedding ? 'Embedding…' : node.embedding_status === 'ready' ? 'Re-embed this item' : 'Embed this item'}</button><button className="primary-button" type="button" onClick={() => void handleGenerate()} disabled={isGenerating || node.embedding_status !== 'ready'}>{isGenerating ? 'Generating…' : 'Generate suggestions'}</button></div> : <p className="muted-copy">Start the local FastAPI service and set <code>VITE_SEMANTIC_API_URL</code> to enable embedding.</p>}{error ? <p className="form-error" role="alert">{error}</p> : null}{generationMessage ? <p className="muted-copy" role="status">{generationMessage}</p> : null}<SuggestionsPanel node={node} revision={revision} /></section>
 }
 
 function SuggestionsPanel({ node, revision }: { node: OwnerNode; revision: number }) {

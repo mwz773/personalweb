@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 
 export type NodeType = 'reflection' | 'project' | 'article' | 'book' | 'music'
 export type NodeStatus = 'draft' | 'published'
-export type RelationshipType = 'related_to' | 'inspired_by' | 'extends'
+export type RelationshipType = 'related_to' | 'inspired_by' | 'cites' | 'extends' | 'contrasts_with'
 
 export type PortfolioNode = {
   id: string
@@ -76,7 +76,9 @@ export function relationshipLabel(type: RelationshipType): string {
   return {
     related_to: 'Related to',
     inspired_by: 'Inspired by',
+    cites: 'Cites',
     extends: 'Extends',
+    contrasts_with: 'Contrasts with',
   }[type]
 }
 
@@ -213,6 +215,39 @@ export async function getPublishedRelatedNodes(
     const relatedId = link.source_node_id === nodeId ? link.target_node_id : link.source_node_id
     const node = byId.get(relatedId)
     return node ? [{ link: link as NodeLink, node }] : []
+  })
+}
+
+export async function getPublishedSemanticRelatedNodes(
+  nodeId: string,
+): Promise<Array<{ link: NodeLink; node: PortfolioNode }>> {
+  if (!supabase) return []
+
+  const { data: edges, error: edgesError } = await supabase
+    .from('edges')
+    .select('id, source_node_id, target_node_id, relationship_type')
+    .eq('status', 'accepted')
+    .or(`source_node_id.eq.${nodeId},target_node_id.eq.${nodeId}`)
+
+  if (edgesError) throw edgesError
+  if (!edges?.length) return []
+
+  const relatedIds = edges.map((edge) =>
+    edge.source_node_id === nodeId ? edge.target_node_id : edge.source_node_id,
+  )
+  const { data: nodes, error: nodesError } = await supabase
+    .from('nodes')
+    .select(publicNodeFields)
+    .in('id', relatedIds)
+    .eq('status', 'published')
+
+  if (nodesError) throw nodesError
+
+  const byId = new Map((nodes as PortfolioNode[]).map((node) => [node.id, node]))
+  return edges.flatMap((edge) => {
+    const relatedId = edge.source_node_id === nodeId ? edge.target_node_id : edge.source_node_id
+    const node = byId.get(relatedId)
+    return node ? [{ link: edge as NodeLink, node }] : []
   })
 }
 

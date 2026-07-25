@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel, Field
 
 
 load_dotenv()
@@ -22,6 +23,8 @@ ALLOWED_ORIGIN = os.getenv("SEMANTIC_ALLOWED_ORIGIN", "http://localhost:5173")
 EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
 )
+SUGGESTION_THRESHOLD = float(os.getenv("SUGGESTION_THRESHOLD", "0.35"))
+SUGGESTION_LIMIT = int(os.getenv("SUGGESTION_LIMIT", "8"))
 
 app = FastAPI(title="Personal Web Semantic Service")
 app.add_middleware(
@@ -166,3 +169,205 @@ async def embed_node(node_id: str, owner_id: str = Depends(verify_owner)) -> dic
         raise HTTPException(status_code=500, detail="Embedding failed") from error
 
     return {"node_id": node_id, "block_count": len(blocks), "model": EMBEDDING_MODEL}
+
+@app.post("/admin/nodes/{node_id}/suggestions")
+async def generate_suggestions(
+    node_id: str,
+    owner_id: str = Depends(verify_owner),
+) -> dict[str, int]:
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select exists (
+                  select 1
+                  from public.nodes
+                  where id = %s and owner_id = %s
+                )
+                """,
+                (node_id, owner_id),
+            )
+            if not cursor.fetchone()[0]:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Content not found",
+                )
+
+            cursor.execute(
+                """
+                select exists (
+                  select 1
+                  from public.blocks
+                  where node_id = %s and embedding is not null
+                )
+                """,
+                (node_id,),
+            )
+            if not cursor.fetchone()[0]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Embed this item before generating suggestions",
+                )
+
+            cursor.execute(
+                """
+                with scored_matches as (
+                  select
+                    source_block.id as source_block_id,
+                    target_block.id as target_block_id,
+                    target_block.node_id as target_node_id,
+                    greatest(
+                      0::real,
+                      least(
+                        1::real,
+                        1 - (source_block.embedding <=> target_block.embedding)
+                      )
+                    )::real as confidence_score
+                  from public.blocks as source_block
+                  join public.blocks as target_block
+                    on target_block.node_id <> source_block.node_id
+                    and target_block.embedding is not null
+                  join public.nodes as target_node
+                    on target_node.id = target_block.node_id
+                  where source_block.node_id = %s
+                    and source_block.embedding is not null
+                    and target_node.owner_id = %s
+                ),
+                best_match_per_node as (
+                  select distinct on (target_node_id)
+                    source_block_id,
+                    target_block_id,
+                    target_node_id,
+                    confidence_score
+                  from scored_matches
+                  where confidence_score >= %s
+                  order by target_node_id, confidence_score desc
+                ),
+                limited_matches as (
+                  select *
+                  from best_match_per_node
+                  order by confidence_score desc
+                  limit %s
+                ),
+                upserted_edges as (
+                  insert into public.edges (
+                    source_node_id,
+                    target_node_id,
+                    source_block_id,
+                    target_block_id,
+                    relationship_type,
+                    confidence_score,
+                    status,
+                    origin
+                  )
+                  select
+                    %s,
+                    target_node_id,
+                    source_block_id,
+                    target_block_id,
+                    'related_to',
+                    confidence_score,
+                    'suggested',
+                    'semantic_suggestion'
+                  from limited_matches
+                  on conflict (source_node_id, target_node_id)
+                  do update set
+                    source_block_id = excluded.source_block_id,
+                    target_block_id = excluded.target_block_id,
+                    confidence_score = excluded.confidence_score,
+                    created_at = now()
+                  where public.edges.status = 'suggested'
+                  returning id
+                )
+                select count(*) from upserted_edges
+                """,
+                (node_id, owner_id, SUGGESTION_THRESHOLD, SUGGESTION_LIMIT, node_id),
+            )
+            suggestion_count = cursor.fetchone()[0]
+        connection.commit()
+
+    return {"suggestion_count": suggestion_count}
+
+
+PUBLIC_SEARCH_LIMIT = int(os.getenv("PUBLIC_SEARCH_LIMIT", "12"))
+
+
+class PublicSearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=240)
+    types: list[str] = []
+
+
+@app.post("/public/search")
+async def public_semantic_search(request: PublicSearchRequest) -> dict[str, object]:
+    query = re.sub(r"\s+", " ", request.query).strip()
+    allowed_types = {"reflection", "project", "article", "book", "music"}
+    selected_types = [content_type for content_type in request.types if content_type in allowed_types]
+
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="Enter at least two characters to search")
+
+    vector = await run_in_threadpool(
+        model.encode,
+        [query],
+        normalize_embeddings=True,
+        convert_to_numpy=False,
+    )
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                with block_matches as (
+                  select
+                    node.id as node_id,
+                    node.slug,
+                    node.type,
+                    node.title,
+                    node.summary,
+                    block.content as excerpt,
+                    greatest(
+                      0::real,
+                      least(1::real, 1 - (block.embedding <=> %s::extensions.vector))
+                    )::real as similarity
+                  from public.blocks as block
+                  join public.nodes as node on node.id = block.node_id
+                  where node.status = 'published'
+                    and block.embedding is not null
+                    and (
+                      cardinality(%s::text[]) = 0
+                      or node.type = any(%s::text[])
+                    )
+                ),
+                best_block_per_node as (
+                  select distinct on (node_id)
+                    node_id, slug, type, title, summary, excerpt, similarity
+                  from block_matches
+                  order by node_id, similarity desc
+                )
+                select node_id, slug, type, title, summary, excerpt
+                from best_block_per_node
+                order by similarity desc
+                limit %s
+                """,
+                (
+                    vector_literal(vector[0].tolist()),
+                    selected_types,
+                    selected_types,
+                    PUBLIC_SEARCH_LIMIT,
+                ),
+            )
+            rows = cursor.fetchall()
+
+    return {
+        "results": [
+            {
+                "id": row[0],
+                "slug": row[1],
+                "type": row[2],
+                "title": row[3],
+                "summary": row[4],
+                "excerpt": row[5][:420],
+            }
+            for row in rows
+        ]
+    }

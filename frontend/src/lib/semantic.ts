@@ -19,7 +19,7 @@ async function getAccessToken(): Promise<string> {
   return data.session.access_token
 }
 
-async function callSemanticService(path: string): Promise<void> {
+async function callSemanticService<T>(path: string): Promise<T> {
   if (!semanticApiUrl || !supabase) {
     throw new Error('Start the FastAPI semantic service and set VITE_SEMANTIC_API_URL first.')
   }
@@ -36,14 +36,50 @@ async function callSemanticService(path: string): Promise<void> {
       : 'The semantic service could not embed this item.'
     throw new Error(detail)
   }
+
+  return response.json() as Promise<T>
 }
 
 export async function embedNode(nodeId: string): Promise<void> {
-  return callSemanticService(`/admin/nodes/${nodeId}/embed`)
+  await callSemanticService(`/admin/nodes/${nodeId}/embed`)
 }
 
-export async function generateSuggestions(nodeId: string): Promise<void> {
+export async function generateSuggestions(nodeId: string): Promise<{ suggestion_count: number }> {
   return callSemanticService(`/admin/nodes/${nodeId}/suggestions`)
+}
+
+export type PublicSemanticSearchResult = {
+  id: string
+  slug: string
+  type: NodeType
+  title: string
+  summary: string
+  excerpt: string
+}
+
+export async function searchPublishedContent(
+  query: string,
+  types: NodeType[],
+): Promise<PublicSemanticSearchResult[]> {
+  if (!semanticApiUrl) {
+    throw new Error('Semantic search is not available right now.')
+  }
+
+  const response = await fetch(`${semanticApiUrl}/public/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, types }),
+  })
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null)
+    const detail = typeof payload === 'object' && payload !== null && 'detail' in payload && typeof payload.detail === 'string'
+      ? payload.detail
+      : 'Semantic search is unavailable right now.'
+    throw new Error(detail)
+  }
+
+  const payload = await response.json() as { results?: PublicSemanticSearchResult[] }
+  return payload.results ?? []
 }
 
 export type SemanticSuggestion = {
