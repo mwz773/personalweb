@@ -1,0 +1,21 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+**/__pycache__/
+*.py[cod]
+
+# Node/Vite
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# Logs and local tooling
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
