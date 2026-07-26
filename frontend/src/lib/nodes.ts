@@ -431,7 +431,7 @@ export async function getPublicGraph(): Promise<PublicGraph> {
       .from('nodes')
       .select(publicNodeFields)
       .eq('status', 'published')
-      .in('type', ['reflection', 'project', 'article', 'book', 'music'])
+      .in('type', ['reflection', 'project', 'article', 'book', 'music', 'film'])
       .order('published_at', { ascending: false }),
     supabase
       .from('node_links')

@@ -4,7 +4,7 @@ import './App.css'
 import headshot from './assets/headshot.jpg'
 import { getSession, signIn, signOut, type Session } from './lib/auth'
 import { readableError } from './lib/errors'
-import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, searchPublishedContent, type PublicSemanticSearchResult, type SemanticSuggestion } from './lib/semantic'
+import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, type SemanticSuggestion } from './lib/semantic'
 import {
   createNode,
   createNodeMedia,
@@ -40,8 +40,32 @@ import {
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 type LoadState = 'loading' | 'ready' | 'error'
-type PublicFilter = 'all' | NodeType
 
+function useScrollReveal<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+
+  useEffect(() => {
+    const container = ref.current
+    if (!container || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const elements = [...container.querySelectorAll<HTMLElement>('[data-reveal]')]
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-revealed')
+          observer.unobserve(entry.target)
+        }
+      }),
+      { threshold: .12 },
+    )
+    elements.forEach((element, index) => {
+      element.style.setProperty('--reveal-delay', `${Math.min(index * 55, 220)}ms`)
+      observer.observe(element)
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return ref
+}
 const emptyNode: NodeInput = {
   type: 'reflection',
   slug: '',
@@ -178,7 +202,6 @@ function GraphPage() {
     }
     void loadGraph()
   }, [])
-
   useEffect(() => {
     const element = graphContainerRef.current
     if (!element) return
@@ -221,20 +244,30 @@ function SiteHeader({ admin = false }: { admin?: boolean }) {
 }
 
 function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
+  const homeRef = useScrollReveal<HTMLElement>()
+
   return (
-    <main className="hub-page">
-      <header className="hub-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="Personal links"><a href="/cv">Resume</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header>
+    <main className="hub-page" ref={homeRef}>
+      <header className="hub-header" data-reveal>
+        <a className="hub-name" href="/">Mandy Zhang</a>
+        <nav aria-label="Personal links">
+          <a href="/cv">Resume</a>
+          <a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a>
+          <a href="mailto:mandy.zhang@yale.edu">Email</a>
+          <a href="https://github.com/mwz773">GitHub</a>
+
+        </nav>
+      </header>
       <AboutSection />
       <HubGraph />
       <MediaGrid nodes={nodes} />
-      <section className="hub-search"><SemanticSearch /></section>
-      <footer className="hub-footer"><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
+      <footer className="hub-footer" data-reveal><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
 }
 
 function AboutSection() {
-  return <section className="about-section" aria-labelledby="about-heading"><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
+  return <section className="about-section" aria-labelledby="about-heading" data-reveal><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
 }
 
 type CvExperience = {
@@ -263,7 +296,7 @@ const cvSkills = [
 ]
 
 function CvPage() {
-  return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building useful things with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · GPA 3.74 / 4.00</p><p>Coursework includes algorithms, artificial intelligence, machine learning, full-stack web development, systems programming, security, and human-computer interaction.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
+  return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a className="is-active" href="/cv" aria-current="page">Resume</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building useful things with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p><a className="cv-download" href="/MandyZhang_Resume.pdf" download>Download Resume</a></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · GPA 3.74 / 4.00</p><p>Coursework includes algorithms, artificial intelligence, machine learning, full-stack web development, systems programming, security, and human-computer interaction.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
 }
 
 
@@ -273,6 +306,8 @@ function HubGraph() {
   const [links, setLinks] = useState<GraphLink[]>([])
   const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(new Set(['reflection', 'project', 'article', 'book', 'music', 'film']))
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const graphRef = useRef<HTMLDivElement>(null)
   const forceGraphRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
@@ -281,6 +316,11 @@ function HubGraph() {
   useEffect(() => {
     void getPublicGraph().then((graph) => { setNodes(graph.nodes); setLinks(graph.links.map((link) => ({ id: link.id, source: link.source_node_id, target: link.target_node_id, relationship_type: link.relationship_type }))); setState('ready') }).catch(() => setState('error'))
   }, [])
+  useEffect(() => {
+    if (state !== 'ready' || !nodes.length) return
+    const frame = window.requestAnimationFrame(() => forceGraphRef.current?.zoomToFit(650, 42))
+    return () => window.cancelAnimationFrame(frame)
+  }, [nodes.length, state])
   useEffect(() => {
     const element = graphRef.current
     if (!element) return
@@ -295,7 +335,8 @@ function HubGraph() {
   }, [activeTypes, nodes, query])
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
   const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(graphEndpointId(link.source)) && visibleIds.has(graphEndpointId(link.target))), [links, visibleIds])
-  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId).flatMap((link) => [graphEndpointId(link.source), graphEndpointId(link.target)]) : []), [selectedId, visibleLinks])
+  const activeNodeId = selectedId ?? hoveredNodeId
+  const connectedIds = useMemo(() => new Set(activeNodeId ? visibleLinks.filter((link) => graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId).flatMap((link) => [graphEndpointId(link.source), graphEndpointId(link.target)]) : []), [activeNodeId, visibleLinks])
   const selected = nodes.find((node) => node.id === selectedId) ?? null
   const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks.map((link) => ({ ...link, source: graphEndpointId(link.source), target: graphEndpointId(link.target) })) }), [visibleLinks, visibleNodes])
 
@@ -312,50 +353,24 @@ function HubGraph() {
   function resetGraphView() {
     setActiveTypes(new Set(['reflection', 'project', 'article', 'book', 'music', 'film']))
     setSelectedId(null)
+    setHoveredNodeId(null)
+    setHoveredLinkId(null)
     setQuery('')
     window.requestAnimationFrame(() => forceGraphRef.current?.zoomToFit(450, 42))
   }
 
   if (state === 'error') return null
-  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading"><div className="hub-section-heading"><h1 id="hub-graph-heading">Mandy's Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#5d432c" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === selectedId; const connected = !selectedId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px ui-sans-serif, system-ui`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? '#e8a317' : 'rgba(246,238,229,.32)'} linkWidth={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? 1.8 : .8} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
+  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
 }
 
 function MediaGrid({ nodes }: { nodes: PortfolioNode[] }) {
   const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>('all')
   const [sort, setSort] = useState<'date' | 'name'>('date')
   const [urls, setUrls] = useState<Record<string, string>>({})
+  const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
   const media = useMemo(() => nodes.filter((node) => node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type)).filter((node) => filter === 'all' || node.type === filter).sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
   useEffect(() => { void getSignedImageUrls([...new Set(media.map((node) => node.cover_image_path).filter((path): path is string => Boolean(path)))]).then(setUrls).catch(() => setUrls({})) }, [media])
-  return <section className="media-grid-section" aria-labelledby="media-grid-heading"><div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">A small library.</h2></div><div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>{media.length ? <div className="media-grid">{media.map((node) => <a className="media-tile" key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}><div className="media-thumbnail">{urls[node.cover_image_path!] ? <img src={urls[node.cover_image_path!]} alt={`Cover for ${node.title}`} /> : <span>{node.title}</span>}</div><span className="media-title">{node.title}</span></a>)}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}</section>
-}
-
-function SemanticSearch() {
-  const [query, setQuery] = useState('')
-  const [type, setType] = useState<PublicFilter>('all')
-  const [results, setResults] = useState<PublicSemanticSearchResult[] | null>(null)
-  const [error, setError] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const cleanQuery = query.trim()
-    if (cleanQuery.length < 2) {
-      setError('Enter at least two characters to search.')
-      return
-    }
-    setError('')
-    setIsSearching(true)
-    try {
-      setResults(await searchPublishedContent(cleanQuery, type === 'all' ? [] : [type]))
-    } catch (searchError) {
-      setError(readableError(searchError, 'Semantic search is unavailable right now.'))
-      setResults(null)
-    } finally {
-      setIsSearching(false)
-    }
-  }
-
-  return <section className="semantic-search" aria-labelledby="semantic-search-heading"><p className="eyebrow">Find an idea</p><h3 id="semantic-search-heading">Search across the portfolio</h3><form onSubmit={handleSubmit}><label className="sr-only" htmlFor="semantic-query">Search published work</label><input id="semantic-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try “design research” or “creative practice”" /><label className="sr-only" htmlFor="semantic-type">Limit search to a content type</label><select id="semantic-type" value={type} onChange={(event) => setType(event.target.value as PublicFilter)}><option value="all">All types</option><option value="reflection">Journal</option><option value="project">Projects</option><option value="article">Articles</option><option value="book">Books</option><option value="music">Music</option><option value="film">Films</option></select><button className="primary-button" type="submit" disabled={isSearching}>{isSearching ? 'Searching…' : 'Search'}</button></form>{error ? <p className="form-error" role="alert">{error}</p> : null}{results !== null && !isSearching && !results.length ? <p className="muted-copy">No published, embedded items matched that idea yet.</p> : null}{results?.length ? <div className="search-results" aria-live="polite">{results.map((result) => <article className="search-result" key={result.id}><p>{nodeTypeLabel(result.type)}</p><h4><a href={publicPath(result)}>{result.title}</a></h4><span>{result.summary}</span><blockquote>{result.excerpt}</blockquote></article>)}</div> : null}</section>
+  return <section className="media-grid-section" aria-labelledby="media-grid-heading" data-reveal><div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">A small library.</h2></div><div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>{media.length ? <div className="media-grid">{media.map((node) => { const imagePath = node.cover_image_path!; const imageUrl = urls[imagePath]; const isLoaded = loadedImages.has(imagePath); return <a className="media-tile" key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}><div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div><span className="media-title">{node.title}</span></a>})}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}</section>
 }
 
 function NodePage({ node }: { node: PortfolioNode | null }) {
