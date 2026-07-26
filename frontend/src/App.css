@@ -588,6 +588,26 @@ main {
 .media-title { font-family: var(--font-display); font-size: 1rem; font-weight: 400; letter-spacing: .015em; line-height: 1.2; transition: color .2s ease, transform .2s ease; }
 .media-tile:hover .media-title, .media-tile:focus-visible .media-title { color: var(--accent); transform: translateX(2px); }
 
+.media-library-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 34px;
+  border: 1px solid var(--ink);
+  padding: 11px 14px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .2s ease, color .2s ease, transform .2s ease;
+}
+
+.media-library-link:hover,
+.media-library-link:focus-visible {
+  background: var(--ink);
+  color: var(--surface);
+  transform: translateY(-2px);
+}
+
 .hub-footer { display: flex; justify-content: space-between; padding: 22px 0; color: rgb(246 238 229 / 72%); font-size: .8rem; }
 .hub-footer a { color: var(--accent); text-underline-offset: 3px; }
 

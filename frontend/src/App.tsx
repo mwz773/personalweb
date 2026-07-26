@@ -119,6 +119,10 @@ function isCvPath(): boolean {
   return window.location.pathname === '/cv' || window.location.pathname === '/cv/'
 }
 
+function isLibraryPath(): boolean {
+  return window.location.pathname === '/library' || window.location.pathname === '/library/'
+}
+
 function App() {
   if (isAdminPath()) return <AdminApp />
   if (isGraphPath()) return <GraphPage />
@@ -132,6 +136,7 @@ function PublicApp() {
   const [node, setNode] = useState<PortfolioNode | null>(null)
   const [error, setError] = useState('')
   const route = publicRoute()
+  const isLibrary = isLibraryPath()
   const routeType = route?.type
   const routeSlug = route?.slug
 
@@ -158,6 +163,7 @@ function PublicApp() {
   if (state === 'loading') return <StatusScreen message="Loading published work…" />
   if (state === 'error') return <StatusScreen title="Connection problem" message={error} detail="Check your Supabase configuration and database setup." />
   if (route) return <NodePage node={node} />
+  if (isLibrary) return <LibraryPage nodes={nodes} />
   return <HomePage nodes={nodes} />
 }
 
@@ -252,6 +258,7 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
         <a className="hub-name" href="/">Mandy Zhang</a>
         <nav aria-label="Personal links">
           <a href="/cv">Resume</a>
+          <a href="/library">Library</a>
           <a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a>
           <a href="mailto:mandy.zhang@yale.edu">Email</a>
           <a href="https://github.com/mwz773">GitHub</a>
@@ -260,14 +267,19 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
       </header>
       <AboutSection />
       <HubGraph />
-      <MediaGrid nodes={nodes} />
+      <MediaGrid nodes={nodes} limit={10} showLibraryLink />
       <footer className="hub-footer" data-reveal><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
 }
 
+function LibraryPage({ nodes }: { nodes: PortfolioNode[] }) {
+  const libraryRef = useScrollReveal<HTMLElement>()
+  return <main className="hub-page library-page" ref={libraryRef}><header className="hub-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="Personal links"><a href="/">Home</a><a href="/cv">Resume</a><a href="/library">Library</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header><MediaGrid nodes={nodes} /><footer className="hub-footer"><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer></main>
+}
+
 function AboutSection() {
-  return <section className="about-section" aria-labelledby="about-heading" data-reveal><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
+  return <section className="about-section" aria-labelledby="about-heading" data-reveal><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." width="1400" height="933" fetchPriority="high" decoding="async" /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
 }
 
 type CvExperience = {
@@ -363,14 +375,36 @@ function HubGraph() {
   return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
 }
 
-function MediaGrid({ nodes }: { nodes: PortfolioNode[] }) {
+function MediaGrid({ nodes, limit, showLibraryLink = false }: { nodes: PortfolioNode[]; limit?: number; showLibraryLink?: boolean }) {
   const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>('all')
   const [sort, setSort] = useState<'date' | 'name'>('date')
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
-  const media = useMemo(() => nodes.filter((node) => node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type)).filter((node) => filter === 'all' || node.type === filter).sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
-  useEffect(() => { void getSignedImageUrls([...new Set(media.map((node) => node.cover_image_path).filter((path): path is string => Boolean(path)))]).then(setUrls).catch(() => setUrls({})) }, [media])
-  return <section className="media-grid-section" aria-labelledby="media-grid-heading" data-reveal><div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">A small library.</h2></div><div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>{media.length ? <div className="media-grid">{media.map((node) => { const imagePath = node.cover_image_path!; const imageUrl = urls[imagePath]; const isLoaded = loadedImages.has(imagePath); return <a className="media-tile" key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}><div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div><span className="media-title">{node.title}</span></a>})}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}</section>
+  const media = useMemo(() => nodes
+    .filter((node) => node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type))
+    .filter((node) => filter === 'all' || node.type === filter)
+    .sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
+  const visibleMedia = useMemo(() => limit ? media.slice(0, limit) : media, [limit, media])
+
+  useEffect(() => {
+    const paths = [...new Set(visibleMedia.map((node) => node.cover_image_path).filter((path): path is string => Boolean(path)))]
+    void getSignedImageUrls(paths).then(setUrls).catch(() => setUrls({}))
+  }, [visibleMedia])
+
+  return <section className="media-grid-section" aria-labelledby="media-grid-heading" data-reveal>
+    <div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">My library.</h2></div>
+    <div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>
+    {visibleMedia.length ? <div className="media-grid">{visibleMedia.map((node) => {
+      const imagePath = node.cover_image_path!
+      const imageUrl = urls[imagePath]
+      const isLoaded = loadedImages.has(imagePath)
+      return <a className="media-tile" key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}>
+        <div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} loading="lazy" decoding="async" onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div>
+        <span className="media-title">{node.title}</span>
+      </a>
+    })}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}
+    {showLibraryLink ? <a className="media-library-link" href="/library">View all media <span aria-hidden="true">→</span></a> : null}
+  </section>
 }
 
 function NodePage({ node }: { node: PortfolioNode | null }) {
@@ -422,7 +456,7 @@ function NodePage({ node }: { node: PortfolioNode | null }) {
     <main>
       <SiteHeader />
       <article className="reflection-page">
-        <a className="back-link" href="/">← All work and reflections</a>
+        <a className="back-link" href="/library">← Back to library</a>
         <p className="eyebrow">{nodeTypeLabel(node.type)} · {formatDate(node.published_at)}</p>
         <h1>{node.title}</h1>
         <p className="reflection-summary">{node.summary}</p>
