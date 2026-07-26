@@ -47,6 +47,11 @@ export type NodeLink = {
   relationship_type: RelationshipType
 }
 
+export type PublicGraph = {
+  nodes: PortfolioNode[]
+  links: NodeLink[]
+}
+
 const publicNodeFields =
   'id, slug, type, title, summary, markdown_content, project_url, creator, source_name, source_url, published_at'
 const ownerNodeFields = `${publicNodeFields}, status, updated_at, embedding_status, embedding_model, last_embedded_at, embedding_error`
@@ -249,6 +254,44 @@ export async function getPublishedSemanticRelatedNodes(
     const node = byId.get(relatedId)
     return node ? [{ link: edge as NodeLink, node }] : []
   })
+}
+
+export async function getPublicGraph(): Promise<PublicGraph> {
+  if (!supabase) return { nodes: [], links: [] }
+
+  const [nodesResult, manualLinksResult, semanticEdgesResult] = await Promise.all([
+    supabase
+      .from('nodes')
+      .select(publicNodeFields)
+      .eq('status', 'published')
+      .in('type', ['reflection', 'project', 'article', 'book', 'music'])
+      .order('published_at', { ascending: false }),
+    supabase
+      .from('node_links')
+      .select('id, source_node_id, target_node_id, relationship_type'),
+    supabase
+      .from('edges')
+      .select('id, source_node_id, target_node_id, relationship_type')
+      .eq('status', 'accepted'),
+  ])
+
+  if (nodesResult.error) throw nodesResult.error
+  if (manualLinksResult.error) throw manualLinksResult.error
+  if (semanticEdgesResult.error) throw semanticEdgesResult.error
+
+  const nodes = (nodesResult.data ?? []) as PortfolioNode[]
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const pairIds = new Set<string>()
+  const links = [...(semanticEdgesResult.data ?? []), ...(manualLinksResult.data ?? [])]
+    .filter((link) => nodeIds.has(link.source_node_id) && nodeIds.has(link.target_node_id))
+    .filter((link) => {
+      const pairId = [link.source_node_id, link.target_node_id].sort().join(':')
+      if (pairIds.has(pairId)) return false
+      pairIds.add(pairId)
+      return true
+    }) as NodeLink[]
+
+  return { nodes, links }
 }
 
 export async function createNodeLink(

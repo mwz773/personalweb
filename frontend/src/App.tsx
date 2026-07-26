@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import ForceGraph2D from 'react-force-graph-2d'
 import './App.css'
 import { getSession, signIn, signOut, type Session } from './lib/auth'
 import { readableError } from './lib/errors'
@@ -14,6 +15,7 @@ import {
   getPublishedNodes,
   getPublishedRelatedNodes,
   getPublishedSemanticRelatedNodes,
+  getPublicGraph,
   nodeTypeLabel,
   publicPath,
   relationshipLabel,
@@ -74,8 +76,14 @@ function isAdminPath(): boolean {
   return window.location.pathname === '/admin' || window.location.pathname === '/admin/'
 }
 
+function isGraphPath(): boolean {
+  return window.location.pathname === '/graph' || window.location.pathname === '/graph/'
+}
+
 function App() {
-  return isAdminPath() ? <AdminApp /> : <PublicApp />
+  if (isAdminPath()) return <AdminApp />
+  if (isGraphPath()) return <GraphPage />
+  return <PublicApp />
 }
 
 function PublicApp() {
@@ -113,8 +121,82 @@ function PublicApp() {
   return <HomePage nodes={nodes} />
 }
 
+type GraphNode = PortfolioNode & { x?: number; y?: number }
+type GraphLink = { id: string; source: string; target: string; relationship_type: RelationshipType }
+
+const graphTypeColors: Record<NodeType, string> = {
+  reflection: '#e8a317',
+  project: '#8cc7ad',
+  article: '#d78a70',
+  book: '#8ca8d9',
+  music: '#bf91d7',
+}
+
+function GraphPage() {
+  const [state, setState] = useState<LoadState>('loading')
+  const [nodes, setNodes] = useState<GraphNode[]>([])
+  const [links, setLinks] = useState<GraphLink[]>([])
+  const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(new Set(['reflection', 'project', 'article', 'book', 'music']))
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
+  const graphContainerRef = useRef<HTMLDivElement>(null)
+  const [graphSize, setGraphSize] = useState({ width: 760, height: 560 })
+
+  useEffect(() => {
+    async function loadGraph() {
+      try {
+        const graph = await getPublicGraph()
+        setNodes(graph.nodes)
+        setLinks(graph.links.map((link) => ({ id: link.id, source: link.source_node_id, target: link.target_node_id, relationship_type: link.relationship_type })))
+        setState('ready')
+      } catch (loadError) {
+        setError(readableError(loadError, 'The connection map could not load.'))
+        setState('error')
+      }
+    }
+    void loadGraph()
+  }, [])
+
+  useEffect(() => {
+    const element = graphContainerRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => {
+      setGraphSize({ width: Math.max(280, entry.contentRect.width), height: Math.max(420, entry.contentRect.height) })
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const visibleNodes = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    return nodes.filter((node) => activeTypes.has(node.type) && (!normalizedQuery || `${node.title} ${node.summary}`.toLowerCase().includes(normalizedQuery)))
+  }, [activeTypes, nodes, query])
+  const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
+  const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target)), [links, visibleIds])
+  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => link.source === selectedId || link.target === selectedId).flatMap((link) => [link.source, link.target]) : []), [selectedId, visibleLinks])
+  const selected = nodes.find((node) => node.id === selectedId) ?? null
+  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks }), [visibleLinks, visibleNodes])
+
+  function toggleType(type: NodeType) {
+    setActiveTypes((current) => {
+      if (current.has(type) && current.size === 1) return current
+      const next = new Set(current)
+      if (next.has(type)) next.delete(type)
+      else next.add(type)
+      return next
+    })
+  }
+
+  if (!isSupabaseConfigured) return <SetupScreen />
+  if (state === 'loading') return <StatusScreen message="Mapping published connections…" />
+  if (state === 'error') return <StatusScreen title="Connection problem" message={error} detail={<a href="/">Return to the portfolio</a>} />
+
+  return <div className="graph-page"><header className="graph-header"><a className="graph-wordmark" href="/">✦ Your Name</a><div><a href="/" className="graph-back-link">Portfolio</a><span>Knowledge graph</span></div></header><main className="graph-main"><section className="graph-intro"><p className="eyebrow">Explore the threads</p><h1>Ideas in relation.</h1><p>Every line is a connection I have reviewed and chosen to make public. Drag to pan, scroll to zoom, and select a node to follow its thread.</p></section><section className="graph-workspace" aria-label="Interactive portfolio connection graph"><div className="graph-canvas" ref={graphContainerRef}><ForceGraph2D<GraphNode, GraphLink> width={graphSize.width} height={graphSize.height} graphData={graphData} backgroundColor="#0d0c0a" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const isSelected = node.id === selectedId; const isConnected = !selectedId || connectedIds.has(node.id); const radius = isSelected ? 7 : 5; context.globalAlpha = isConnected ? 1 : 0.22; if (isSelected) { context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI); context.strokeStyle = graphTypeColors[node.type]; context.lineWidth = 1.5 / scale; context.stroke() } context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (scale >= 0.8) { context.font = `${Math.max(10 / scale, 3)}px ui-monospace, SFMono-Regular, Menlo, monospace`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = isSelected ? '#fffaf2' : '#d7d1c7'; context.fillText(node.title.length > 27 ? `${node.title.slice(0, 25)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} nodeLabel={(node) => `${node.title} · ${nodeTypeLabel(node.type)}`} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} linkColor={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? '#e8a317' : 'rgba(255,255,255,0.16)'} linkWidth={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? 1.8 : 0.8} linkLabel={(link) => relationshipLabel(link.relationship_type)} cooldownTicks={100} /></div><aside className="graph-sidebar"><label className="graph-search-label" htmlFor="graph-filter">Filter graph</label><input id="graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div className="graph-sidebar-section"><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'graph-filter-toggle is-active' : 'graph-filter-toggle'} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#423f3a' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="graph-sidebar-section graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></section>{selected ? <section className="graph-selection" aria-live="polite"><i style={{ background: graphTypeColors[selected.type] }} /><div><p>{nodeTypeLabel(selected.type)}</p><h2>{selected.title}</h2><span>{selected.summary}</span></div><small>{Math.max(0, connectedIds.size - 1)} connections</small><a className="graph-open-link" href={publicPath(selected)}>Open item <span aria-hidden="true">→</span></a></section> : <p className="graph-instruction">Select a node to see its connections and read the item.</p>}</main></div>
+}
+
 function SiteHeader({ admin = false }: { admin?: boolean }) {
-  return <header className="site-header"><a className="wordmark" href="/"><span aria-hidden="true">✦</span> Your Name</a><span className="header-note">{admin ? 'Owner dashboard' : 'A living portfolio'}</span></header>
+  return <header className="site-header"><a className="wordmark" href="/"><span aria-hidden="true">✦</span> Your Name</a>{admin ? <span className="header-note">Owner dashboard</span> : <a className="header-note graph-nav-link" href="/graph">Knowledge graph</a>}</header>
 }
 
 function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
