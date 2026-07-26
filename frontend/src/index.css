@@ -1,6 +1,7 @@
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  --font-display: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+  --font-body: Georgia, "Times New Roman", serif;
+  font-family: var(--font-body);
   color: #5d432c;
   background: #f6eee5;
   font-synthesis: none;

@@ -24,7 +24,7 @@ main {
 
 .hub-name {
   color: #922724;
-  font-family: "Stencil Std", fantasy, sans-serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
   letter-spacing: .03em;
   text-decoration: none;
@@ -49,11 +49,58 @@ main {
 }
 
 .hub-graph,
-.hub-writing,
 .media-grid-section,
 .hub-search {
   padding: 62px 0;
   border-bottom: 1px solid #c9b8a9;
+}
+
+.about-section {
+  display: grid;
+  grid-template-columns: minmax(220px, .62fr) minmax(0, 1.38fr);
+  gap: clamp(28px, 5vw, 68px);
+  align-items: start;
+  padding: 62px 0;
+  border-bottom: 1px solid #c9b8a9;
+}
+
+.about-photo {
+  aspect-ratio: .76;
+  overflow: hidden;
+  background: #776052;
+}
+
+.about-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 58%;
+}
+
+.about-copy {
+  max-width: 720px;
+  padding-top: 2px;
+}
+
+.about-copy h1 {
+  margin-bottom: 20px;
+  color: #5d432c;
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  line-height: .94;
+}
+
+.about-copy > p:not(.eyebrow) {
+  margin-bottom: 17px;
+  color: #5d432c;
+  font-size: clamp(1.02rem, 1.5vw, 1.18rem);
+  line-height: 1.62;
+}
+
+.about-copy a {
+  color: #922724;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .hub-section-heading {
@@ -65,7 +112,7 @@ main {
 .hub-section-heading h2 {
   margin-bottom: 12px;
   color: #5d432c;
-  font-family: "Stencil Std", fantasy, sans-serif;
+  font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -.03em;
 }
@@ -89,12 +136,72 @@ main {
 }
 
 .hub-graph-canvas {
-  min-height: 420px;
+  min-height: 560px;
   overflow: hidden;
   background: #5d432c;
   background-image: radial-gradient(rgb(246 238 229 / 16%) .6px, transparent .7px);
   background-size: 26px 26px;
 }
+
+.hub-graph-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 228px;
+  border: 1px solid #5d432c;
+}
+
+.hub-graph-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  border-left: 1px solid rgb(246 238 229 / 25%);
+  background: #5d432c;
+  padding: 18px 15px;
+  color: #f6eee5;
+}
+
+.hub-graph-sidebar > label,
+.hub-graph-sidebar p {
+  margin: 0 0 8px;
+  color: rgb(246 238 229 / 62%);
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.hub-graph-sidebar input {
+  width: 100%;
+  border: 1px solid rgb(246 238 229 / 32%);
+  background: rgb(246 238 229 / 8%);
+  padding: 9px 10px;
+  color: #f6eee5;
+  font: inherit;
+}
+
+.hub-graph-sidebar input::placeholder { color: rgb(246 238 229 / 48%); }
+.hub-graph-sidebar > div { border-top: 1px solid rgb(246 238 229 / 18%); padding-top: 14px; }
+
+.hub-graph-sidebar button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  color: rgb(246 238 229 / 52%);
+  cursor: pointer;
+  font: inherit;
+  font-size: .84rem;
+  text-align: left;
+}
+
+.hub-graph-sidebar button.is-active { color: #f6eee5; }
+.hub-graph-sidebar button i { width: 9px; height: 9px; border-radius: 50%; }
+.hub-graph-sidebar button small { margin-left: auto; color: rgb(246 238 229 / 55%); }
+.hub-graph-stats { display: grid; gap: 8px; }
+.hub-graph-stats p { grid-column: 1 / -1; }
+.hub-graph-stats span { display: flex; justify-content: space-between; color: rgb(246 238 229 / 70%); font-size: .8rem; }
 
 .hub-graph-canvas > p {
   padding: 28px;
@@ -124,6 +231,7 @@ main {
 
 .hub-graph-selected strong { font-size: 1rem; }
 .hub-graph-selected small { color: rgb(246 238 229 / 72%); }
+.hub-graph-selected em { color: #e8a317; font-size: .8rem; font-style: normal; white-space: nowrap; }
 .hub-graph-footer { display: flex; justify-content: space-between; font-size: .9rem; }
 .hub-graph-footer a { color: #f6eee5; text-underline-offset: 3px; }
 
@@ -154,7 +262,7 @@ main {
   text-transform: uppercase;
 }
 
-.writing-feed h3 { margin: 0; font-family: "Marker Felt", fantasy, sans-serif; font-size: 1.1rem; }
+.writing-feed h3 { margin: 0; font-family: var(--font-display); font-size: 1.1rem; font-weight: 400; letter-spacing: .015em; }
 .writing-feed h3 a { text-decoration-color: #cd7d5e; text-underline-offset: 4px; }
 .writing-feed span { color: #776052; font-size: .92rem; line-height: 1.45; }
 
@@ -174,15 +282,17 @@ main {
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 2px;
-  background: #5d432c;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  column-gap: 20px;
+  row-gap: 34px;
 }
 
-.media-grid a { display: block; aspect-ratio: .72; overflow: hidden; background: #776052; color: #f6eee5; text-decoration: none; }
-.media-grid img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
-.media-grid a:hover img, .media-grid a:focus-visible img { transform: scale(1.04); }
-.media-grid a > span { display: grid; height: 100%; place-items: center; padding: 10px; text-align: center; font-size: .82rem; }
+.media-tile { display: grid; gap: 10px; min-width: 0; color: #5d432c; text-decoration: none; }
+.media-thumbnail { aspect-ratio: .72; overflow: hidden; background: #776052; }
+.media-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+.media-tile:hover img, .media-tile:focus-visible img { transform: scale(1.025); }
+.media-thumbnail > span { display: grid; height: 100%; place-items: center; padding: 12px; color: #f6eee5; text-align: center; font-size: .82rem; }
+.media-title { font-family: var(--font-display); font-size: 1rem; font-weight: 400; letter-spacing: .015em; line-height: 1.2; }
 
 .hub-search .semantic-search { margin: 0; border-color: #c9b8a9; background: #f6eee5; }
 .hub-footer { display: flex; justify-content: space-between; padding: 22px 0; color: #776052; font-size: .8rem; }
@@ -240,7 +350,7 @@ p {
 h1,
 h2,
 h3 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   color: #20261f;
 }
 
@@ -331,7 +441,7 @@ h3 {
 
 .search-result h4 {
   margin: 0 0 7px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 1.3rem;
 }
 
@@ -379,7 +489,7 @@ h3 {
 
 .graph-wordmark {
   color: #f0ede8;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 1.15rem;
   text-decoration: none;
 }
@@ -450,7 +560,7 @@ h3 {
   display: block;
   margin: 0 0 10px;
   color: rgb(240 237 232 / 43%);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -507,7 +617,7 @@ h3 {
 .graph-filter-toggle small {
   margin-left: auto;
   color: rgb(240 237 232 / 30%);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body);
 }
 
 .graph-stats {
@@ -559,7 +669,7 @@ h3 {
 }
 
 .graph-selection small {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body);
   font-size: 0.7rem;
   white-space: nowrap;
 }
@@ -848,7 +958,7 @@ code {
   border-radius: 4px;
   background: #f0ede4;
   padding: 2px 5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body);
   font-size: 0.9em;
 }
 
@@ -1176,7 +1286,7 @@ code {
 
 .suggestion-heading h4 {
   margin: 10px 0 4px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 1.3rem;
   font-weight: 500;
 }
@@ -1346,14 +1456,33 @@ code {
   }
 
   .hub-graph,
-  .hub-writing,
   .media-grid-section,
   .hub-search {
     padding: 42px 0;
   }
 
+  .about-section {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 42px 0;
+  }
+
+  .about-photo {
+    width: min(100%, 350px);
+    aspect-ratio: 1 / 1;
+  }
+
   .hub-graph-canvas {
-    min-height: 360px;
+    min-height: 440px;
+  }
+
+  .hub-graph-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-graph-sidebar {
+    border-top: 1px solid rgb(246 238 229 / 25%);
+    border-left: 0;
   }
 
   .hub-graph-selected {
@@ -1373,6 +1502,8 @@ code {
 
   .media-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 13px;
+    row-gap: 24px;
   }
 
   .header-note {
