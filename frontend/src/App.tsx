@@ -6,9 +6,12 @@ import { readableError } from './lib/errors'
 import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, searchPublishedContent, type PublicSemanticSearchResult, type SemanticSuggestion } from './lib/semantic'
 import {
   createNode,
+  createNodeMedia,
   createNodeLink,
   deleteNode,
+  deleteNodeMedia,
   deleteNodeLink,
+  getNodeMedia,
   getOwnerLinks,
   getOwnerNodes,
   getPublishedNode,
@@ -16,11 +19,17 @@ import {
   getPublishedRelatedNodes,
   getPublishedSemanticRelatedNodes,
   getPublicGraph,
+  getSignedImageUrls,
   nodeTypeLabel,
   publicPath,
+  removePortfolioImage,
   relationshipLabel,
+  updateNodeCoverImage,
+  updateNodeMedia,
   updateNode,
+  uploadPortfolioImage,
   type NodeInput,
+  type NodeMedia,
   type NodeStatus,
   type NodeType,
   type OwnerNode,
@@ -60,7 +69,7 @@ function semanticStatusLabel(node: OwnerNode): string {
 }
 
 function publicRoute(): { type: NodeType; slug: string } | null {
-  const match = window.location.pathname.match(/^\/(reflections|projects|articles|books|music)\/([^/]+)\/?$/)
+  const match = window.location.pathname.match(/^\/(reflections|projects|articles|books|music|films)\/([^/]+)\/?$/)
   if (!match) return null
   const types: Record<string, NodeType> = {
     reflections: 'reflection',
@@ -68,6 +77,7 @@ function publicRoute(): { type: NodeType; slug: string } | null {
     articles: 'article',
     books: 'book',
     music: 'music',
+    films: 'film',
   }
   return { type: types[match[1]], slug: decodeURIComponent(match[2]) }
 }
@@ -125,18 +135,19 @@ type GraphNode = PortfolioNode & { x?: number; y?: number }
 type GraphLink = { id: string; source: string; target: string; relationship_type: RelationshipType }
 
 const graphTypeColors: Record<NodeType, string> = {
-  reflection: '#e8a317',
-  project: '#8cc7ad',
-  article: '#d78a70',
-  book: '#8ca8d9',
-  music: '#bf91d7',
+  reflection: '#7e8b70',
+  project: '#e8a317',
+  article: '#cd7d5e',
+  book: '#85594f',
+  music: '#776052',
+  film: '#922724',
 }
 
 function GraphPage() {
   const [state, setState] = useState<LoadState>('loading')
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [links, setLinks] = useState<GraphLink[]>([])
-  const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(new Set(['reflection', 'project', 'article', 'book', 'music']))
+  const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(new Set(['reflection', 'project', 'article', 'book', 'music', 'film']))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
@@ -192,7 +203,7 @@ function GraphPage() {
   if (state === 'loading') return <StatusScreen message="Mapping published connections…" />
   if (state === 'error') return <StatusScreen title="Connection problem" message={error} detail={<a href="/">Return to the portfolio</a>} />
 
-  return <div className="graph-page"><header className="graph-header"><a className="graph-wordmark" href="/">✦ Your Name</a><div><a href="/" className="graph-back-link">Portfolio</a><span>Knowledge graph</span></div></header><main className="graph-main"><section className="graph-intro"><p className="eyebrow">Explore the threads</p><h1>Ideas in relation.</h1><p>Every line is a connection I have reviewed and chosen to make public. Drag to pan, scroll to zoom, and select a node to follow its thread.</p></section><section className="graph-workspace" aria-label="Interactive portfolio connection graph"><div className="graph-canvas" ref={graphContainerRef}><ForceGraph2D<GraphNode, GraphLink> width={graphSize.width} height={graphSize.height} graphData={graphData} backgroundColor="#0d0c0a" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const isSelected = node.id === selectedId; const isConnected = !selectedId || connectedIds.has(node.id); const radius = isSelected ? 7 : 5; context.globalAlpha = isConnected ? 1 : 0.22; if (isSelected) { context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI); context.strokeStyle = graphTypeColors[node.type]; context.lineWidth = 1.5 / scale; context.stroke() } context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (scale >= 0.8) { context.font = `${Math.max(10 / scale, 3)}px ui-monospace, SFMono-Regular, Menlo, monospace`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = isSelected ? '#fffaf2' : '#d7d1c7'; context.fillText(node.title.length > 27 ? `${node.title.slice(0, 25)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} nodeLabel={(node) => `${node.title} · ${nodeTypeLabel(node.type)}`} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} linkColor={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? '#e8a317' : 'rgba(255,255,255,0.16)'} linkWidth={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? 1.8 : 0.8} linkLabel={(link) => relationshipLabel(link.relationship_type)} cooldownTicks={100} /></div><aside className="graph-sidebar"><label className="graph-search-label" htmlFor="graph-filter">Filter graph</label><input id="graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div className="graph-sidebar-section"><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'graph-filter-toggle is-active' : 'graph-filter-toggle'} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#423f3a' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="graph-sidebar-section graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></section>{selected ? <section className="graph-selection" aria-live="polite"><i style={{ background: graphTypeColors[selected.type] }} /><div><p>{nodeTypeLabel(selected.type)}</p><h2>{selected.title}</h2><span>{selected.summary}</span></div><small>{Math.max(0, connectedIds.size - 1)} connections</small><a className="graph-open-link" href={publicPath(selected)}>Open item <span aria-hidden="true">→</span></a></section> : <p className="graph-instruction">Select a node to see its connections and read the item.</p>}</main></div>
+  return <div className="graph-page"><header className="graph-header"><a className="graph-wordmark" href="/">✦ Your Name</a><div><a href="/" className="graph-back-link">Portfolio</a><span>Knowledge graph</span></div></header><main className="graph-main"><section className="graph-intro"><p className="eyebrow">Explore the threads</p><h1>Ideas in relation.</h1><p>Every line is a connection I have reviewed and chosen to make public. Drag to pan, scroll to zoom, and select a node to follow its thread.</p></section><section className="graph-workspace" aria-label="Interactive portfolio connection graph"><div className="graph-canvas" ref={graphContainerRef}><ForceGraph2D<GraphNode, GraphLink> width={graphSize.width} height={graphSize.height} graphData={graphData} backgroundColor="#0d0c0a" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const isSelected = node.id === selectedId; const isConnected = !selectedId || connectedIds.has(node.id); const radius = isSelected ? 7 : 5; context.globalAlpha = isConnected ? 1 : 0.22; if (isSelected) { context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI); context.strokeStyle = graphTypeColors[node.type]; context.lineWidth = 1.5 / scale; context.stroke() } context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (scale >= 0.8) { context.font = `${Math.max(10 / scale, 3)}px ui-monospace, SFMono-Regular, Menlo, monospace`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = isSelected ? '#fffaf2' : '#d7d1c7'; context.fillText(node.title.length > 27 ? `${node.title.slice(0, 25)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} nodeLabel={(node) => `${node.title} · ${nodeTypeLabel(node.type)}`} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} linkColor={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? '#e8a317' : 'rgba(255,255,255,0.16)'} linkWidth={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? 1.8 : 0.8} linkLabel={(link) => relationshipLabel(link.relationship_type)} cooldownTicks={100} /></div><aside className="graph-sidebar"><label className="graph-search-label" htmlFor="graph-filter">Filter graph</label><input id="graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div className="graph-sidebar-section"><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'graph-filter-toggle is-active' : 'graph-filter-toggle'} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#423f3a' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="graph-sidebar-section graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></section>{selected ? <section className="graph-selection" aria-live="polite"><i style={{ background: graphTypeColors[selected.type] }} /><div><p>{nodeTypeLabel(selected.type)}</p><h2>{selected.title}</h2><span>{selected.summary}</span></div><small>{Math.max(0, connectedIds.size - 1)} connections</small><a className="graph-open-link" href={publicPath(selected)}>Open item <span aria-hidden="true">→</span></a></section> : <p className="graph-instruction">Select a node to see its connections and read the item.</p>}</main></div>
 }
 
 function SiteHeader({ admin = false }: { admin?: boolean }) {
@@ -200,27 +211,55 @@ function SiteHeader({ admin = false }: { admin?: boolean }) {
 }
 
 function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
-  const [filter, setFilter] = useState<PublicFilter>('all')
-  const visibleNodes = filter === 'all' ? nodes : nodes.filter((node) => node.type === filter)
+  const writing = nodes.filter((node) => node.type === 'article' || node.type === 'project' || !node.cover_image_path)
 
   return (
-    <main>
-      <SiteHeader />
-      <section className="hero" aria-labelledby="intro-heading">
-        <p className="eyebrow">Hello, I’m Your Name</p>
-        <h1 id="intro-heading">Work, ideas, and the connections between them.</h1>
-        <p className="hero-copy">This is a growing record of the questions I’m exploring and the work that shapes how I think.</p>
-      </section>
-      <section className="content-index" aria-labelledby="content-heading">
-        <div className="section-heading"><div><p className="eyebrow">Explore</p><h2 id="content-heading">Work and reflections</h2></div><span>{visibleNodes.length} published</span></div>
-        <SemanticSearch />
-        <div className="filter-bar" aria-label="Filter published content">
-          {(['all', 'reflection', 'project', 'article', 'book', 'music'] as PublicFilter[]).map((item) => <button className={filter === item ? 'filter-button is-active' : 'filter-button'} key={item} type="button" onClick={() => setFilter(item)}>{item === 'all' ? 'All' : item === 'music' ? 'Music' : `${nodeTypeLabel(item)}s`}</button>)}
-        </div>
-        {visibleNodes.length ? <NodeCards nodes={visibleNodes} /> : <EmptyContent filter={filter} />}
-      </section>
+    <main className="hub-page">
+      <header className="hub-header"><a className="hub-name" href="/">Your Name</a><p>writer, researcher, and curious person <a href="/graph">mapping ideas</a>.</p><nav aria-label="Personal links"><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="/graph">Graph</a></nav></header>
+      <HubGraph />
+      <section className="hub-writing" aria-labelledby="writing-heading"><div className="hub-section-heading"><p className="eyebrow">Writing</p><h2 id="writing-heading">Notes, questions, and work in progress.</h2></div>{writing.length ? <WritingFeed nodes={writing} /> : <EmptyContent filter="all" />}</section>
+      <MediaGrid nodes={nodes} />
+      <section className="hub-search"><SemanticSearch /></section>
+      <footer className="hub-footer"><span>© {new Date().getFullYear()} Your Name</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
+}
+
+function HubGraph() {
+  const [state, setState] = useState<LoadState>('loading')
+  const [nodes, setNodes] = useState<GraphNode[]>([])
+  const [links, setLinks] = useState<GraphLink[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const graphRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ width: 740, height: 480 })
+
+  useEffect(() => {
+    void getPublicGraph().then((graph) => { setNodes(graph.nodes); setLinks(graph.links.map((link) => ({ id: link.id, source: link.source_node_id, target: link.target_node_id, relationship_type: link.relationship_type }))); setState('ready') }).catch(() => setState('error'))
+  }, [])
+  useEffect(() => {
+    const element = graphRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setSize({ width: Math.max(280, entry.contentRect.width), height: Math.max(360, entry.contentRect.height) }))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const selected = nodes.find((node) => node.id === selectedId)
+  if (state === 'error') return null
+  return <section className="hub-graph" aria-labelledby="hub-graph-heading"><div className="hub-section-heading"><p className="eyebrow">Knowledge graph</p><h1 id="hub-graph-heading">Things that belong together.</h1><p>Follow the threads between work, books, films, music, and Journal entries.</p></div><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> width={size.width} height={size.height} graphData={{ nodes, links }} backgroundColor="#5d432c" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === selectedId; const radius = active ? 8 : 5; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > 0.9) { context.font = `${Math.max(10 / scale, 3)}px ui-sans-serif, system-ui`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } }} linkColor={() => 'rgba(246,238,229,.38)'} linkWidth={1} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} />}</div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small></a> : <div className="hub-graph-footer"><span>Select a point to read it.</span><a href="/graph">Open full graph →</a></div>}</section>
+}
+
+function WritingFeed({ nodes }: { nodes: PortfolioNode[] }) {
+  return <div className="writing-feed">{nodes.map((node) => <article key={node.id}><time dateTime={node.published_at ?? undefined}>{formatDate(node.published_at)}</time><p>{nodeTypeLabel(node.type)}</p><h3><a href={publicPath(node)}>{node.title}</a></h3><span>{node.summary}</span></article>)}</div>
+}
+
+function MediaGrid({ nodes }: { nodes: PortfolioNode[] }) {
+  const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>('all')
+  const [sort, setSort] = useState<'date' | 'name'>('date')
+  const [urls, setUrls] = useState<Record<string, string>>({})
+  const media = useMemo(() => nodes.filter((node) => node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type)).filter((node) => filter === 'all' || node.type === filter).sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
+  useEffect(() => { void getSignedImageUrls([...new Set(media.map((node) => node.cover_image_path).filter((path): path is string => Boolean(path)))]).then(setUrls).catch(() => setUrls({})) }, [media])
+  return <section className="media-grid-section" aria-labelledby="media-grid-heading"><div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">A small library.</h2></div><div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>{media.length ? <div className="media-grid">{media.map((node) => <a key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}>{urls[node.cover_image_path!] ? <img src={urls[node.cover_image_path!]} alt={`Cover for ${node.title}`} /> : <span>{node.title}</span>}</a>)}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}</section>
 }
 
 function SemanticSearch() {
@@ -249,11 +288,7 @@ function SemanticSearch() {
     }
   }
 
-  return <section className="semantic-search" aria-labelledby="semantic-search-heading"><p className="eyebrow">Find an idea</p><h3 id="semantic-search-heading">Search across the portfolio</h3><form onSubmit={handleSubmit}><label className="sr-only" htmlFor="semantic-query">Search published work</label><input id="semantic-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try “design research” or “creative practice”" /><label className="sr-only" htmlFor="semantic-type">Limit search to a content type</label><select id="semantic-type" value={type} onChange={(event) => setType(event.target.value as PublicFilter)}><option value="all">All types</option><option value="reflection">Reflections</option><option value="project">Projects</option><option value="article">Articles</option><option value="book">Books</option><option value="music">Music</option></select><button className="primary-button" type="submit" disabled={isSearching}>{isSearching ? 'Searching…' : 'Search'}</button></form>{error ? <p className="form-error" role="alert">{error}</p> : null}{results !== null && !isSearching && !results.length ? <p className="muted-copy">No published, embedded items matched that idea yet.</p> : null}{results?.length ? <div className="search-results" aria-live="polite">{results.map((result) => <article className="search-result" key={result.id}><p>{nodeTypeLabel(result.type)}</p><h4><a href={publicPath(result)}>{result.title}</a></h4><span>{result.summary}</span><blockquote>{result.excerpt}</blockquote></article>)}</div> : null}</section>
-}
-
-function NodeCards({ nodes }: { nodes: PortfolioNode[] }) {
-  return <div className="card-grid">{nodes.map((node) => <article className="reflection-card" key={node.id}><p className="card-date">{nodeTypeLabel(node.type)} · {formatDate(node.published_at)}</p><h3><a href={publicPath(node)}>{node.title}</a></h3><p>{node.summary}</p><a className="read-link" href={publicPath(node)}>Explore {nodeTypeLabel(node.type).toLowerCase()} <span aria-hidden="true">→</span></a></article>)}</div>
+  return <section className="semantic-search" aria-labelledby="semantic-search-heading"><p className="eyebrow">Find an idea</p><h3 id="semantic-search-heading">Search across the portfolio</h3><form onSubmit={handleSubmit}><label className="sr-only" htmlFor="semantic-query">Search published work</label><input id="semantic-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try “design research” or “creative practice”" /><label className="sr-only" htmlFor="semantic-type">Limit search to a content type</label><select id="semantic-type" value={type} onChange={(event) => setType(event.target.value as PublicFilter)}><option value="all">All types</option><option value="reflection">Journal</option><option value="project">Projects</option><option value="article">Articles</option><option value="book">Books</option><option value="music">Music</option><option value="film">Films</option></select><button className="primary-button" type="submit" disabled={isSearching}>{isSearching ? 'Searching…' : 'Search'}</button></form>{error ? <p className="form-error" role="alert">{error}</p> : null}{results !== null && !isSearching && !results.length ? <p className="muted-copy">No published, embedded items matched that idea yet.</p> : null}{results?.length ? <div className="search-results" aria-live="polite">{results.map((result) => <article className="search-result" key={result.id}><p>{nodeTypeLabel(result.type)}</p><h4><a href={publicPath(result)}>{result.title}</a></h4><span>{result.summary}</span><blockquote>{result.excerpt}</blockquote></article>)}</div> : null}</section>
 }
 
 function EmptyContent({ filter }: { filter: PublicFilter }) {
@@ -263,6 +298,8 @@ function EmptyContent({ filter }: { filter: PublicFilter }) {
 function NodePage({ node }: { node: PortfolioNode | null }) {
   const [related, setRelated] = useState<Array<{ link: { id: string; relationship_type: RelationshipType }; node: PortfolioNode }>>([])
   const [linksUnavailable, setLinksUnavailable] = useState(false)
+  const [media, setMedia] = useState<NodeMedia[]>([])
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const nodeId = node?.id
 
   useEffect(() => {
@@ -285,6 +322,22 @@ function NodePage({ node }: { node: PortfolioNode | null }) {
     void loadRelated()
   }, [nodeId])
 
+  useEffect(() => {
+    if (!nodeId) return
+    const currentNodeId = nodeId
+    async function loadMedia() {
+      try {
+        const photos = await getNodeMedia(currentNodeId)
+        const paths = [...new Set([node?.cover_image_path, ...photos.map((photo) => photo.storage_path)].filter((path): path is string => Boolean(path)))]
+        setMedia(photos)
+        setImageUrls(await getSignedImageUrls(paths))
+      } catch {
+        // Text content remains available even if a media URL has expired or cannot load.
+      }
+    }
+    void loadMedia()
+  }, [node?.cover_image_path, nodeId])
+
   if (!node) return <main><StatusScreen title="Content not found" message="It may still be a draft, or the link may be out of date." detail={<a href="/">Return to the homepage</a>} /></main>
 
   return (
@@ -295,10 +348,12 @@ function NodePage({ node }: { node: PortfolioNode | null }) {
         <p className="eyebrow">{nodeTypeLabel(node.type)} · {formatDate(node.published_at)}</p>
         <h1>{node.title}</h1>
         <p className="reflection-summary">{node.summary}</p>
+        {node.cover_image_path && imageUrls[node.cover_image_path] ? <img className="node-cover" src={imageUrls[node.cover_image_path]} alt={`Cover image for ${node.title}`} /> : null}
         {node.creator || node.source_name ? <p className="source-metadata">{node.creator ? <span>{node.creator}</span> : null}{node.creator && node.source_name ? ' · ' : null}{node.source_name ? <span>{node.source_name}</span> : null}</p> : null}
         {node.type === 'project' && node.project_url ? <a className="project-link" href={node.project_url} target="_blank" rel="noreferrer">Visit project <span aria-hidden="true">↗</span></a> : null}
         {node.type !== 'project' && node.source_url ? <a className="project-link" href={node.source_url} target="_blank" rel="noreferrer">{node.type === 'article' ? 'Read source' : node.type === 'book' ? 'Find book' : 'Listen'} <span aria-hidden="true">↗</span></a> : null}
         <div className="reflection-body">{node.markdown_content}</div>
+        {node.type === 'reflection' && media.length ? <section className="journal-gallery" aria-labelledby="journal-gallery-heading"><p className="eyebrow">Photo journal</p><h2 id="journal-gallery-heading">Moments from this entry</h2><div>{media.map((photo) => imageUrls[photo.storage_path] ? <figure key={photo.id}><img src={imageUrls[photo.storage_path]} alt={photo.alt_text} /><figcaption>{photo.alt_text}</figcaption></figure> : null)}</div></section> : null}
       </article>
       {!linksUnavailable && related.length ? <section className="related-section" aria-labelledby="related-heading"><p className="eyebrow">Follow the thread</p><h2 id="related-heading">Connected work</h2><div className="related-list">{related.map(({ link, node: relatedNode }) => <article className="related-card" key={link.id}><p>{relationshipLabel(link.relationship_type)}</p><h3><a href={publicPath(relatedNode)}>{relatedNode.title}</a></h3><span>{nodeTypeLabel(relatedNode.type)} · {relatedNode.summary}</span></article>)}</div></section> : null}
     </main>
@@ -346,29 +401,221 @@ function Dashboard({ session, onSignedOut }: { session: Session; onSignedOut: ()
   useEffect(() => { void loadData() }, [])
   async function handleSignOut() { await signOut(); onSignedOut() }
 
-  return <main><SiteHeader admin /><section className="dashboard-intro"><div><p className="eyebrow">Signed in as {session.user.email}</p><h1>Write and connect.</h1></div><button className="quiet-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></section><div className="dashboard-grid"><section className="dashboard-list" aria-labelledby="your-content-heading"><div className="section-heading compact-heading"><div><p className="eyebrow">Your content</p><h2 id="your-content-heading">Portfolio</h2></div><button className="quiet-button" type="button" onClick={() => setEditing(null)}>New item</button></div>{state === 'loading' ? <p>Loading your content…</p> : null}{state === 'error' ? <p className="form-error" role="alert">{error}</p> : null}<div className="admin-list">{nodes.map((node) => <button className={`admin-list-item ${editing?.id === node.id ? 'is-selected' : ''}`} key={node.id} type="button" onClick={() => setEditing(node)}><span className={`status-pill ${node.status}`}>{node.status}</span><strong>{node.title}</strong><small>{nodeTypeLabel(node.type)} · Updated {formatDate(node.updated_at)}</small><small className={`semantic-status ${node.embedding_status}`}>{semanticStatusLabel(node)}</small></button>)}</div></section><NodeEditor node={editing} nodes={nodes} links={links} linksError={linksError} onChanged={loadData} /></div></main>
+  return <main><SiteHeader admin /><section className="dashboard-intro"><div><p className="eyebrow">Signed in as {session.user.email}</p><h1>Write and connect.</h1></div><button className="quiet-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></section><div className="dashboard-grid"><section className="dashboard-list" aria-labelledby="your-content-heading"><div className="section-heading compact-heading"><div><p className="eyebrow">Your content</p><h2 id="your-content-heading">Portfolio</h2></div><button className="quiet-button" type="button" onClick={() => setEditing(null)}>New item</button></div>{state === 'loading' ? <p>Loading your content…</p> : null}{state === 'error' ? <p className="form-error" role="alert">{error}</p> : null}<div className="admin-list">{nodes.map((node) => <button className={`admin-list-item ${editing?.id === node.id ? 'is-selected' : ''}`} key={node.id} type="button" onClick={() => setEditing(node)}><span className={`status-pill ${node.status}`}>{node.status}</span><strong>{node.title}</strong><small>{nodeTypeLabel(node.type)} · Updated {formatDate(node.updated_at)}</small><small className={`semantic-status ${node.embedding_status}`}>{semanticStatusLabel(node)}</small></button>)}</div></section><NodeEditor node={editing} ownerId={session.user.id} nodes={nodes} links={links} linksError={linksError} onChanged={loadData} /></div></main>
 }
 
-function NodeEditor({ node, nodes, links, linksError, onChanged }: { node: OwnerNode | null; nodes: OwnerNode[]; links: Array<{ id: string; source_node_id: string; target_node_id: string; relationship_type: RelationshipType }>; linksError: string; onChanged: () => Promise<void> }) {
+function NodeEditor({ node, ownerId, nodes, links, linksError, onChanged }: { node: OwnerNode | null; ownerId: string; nodes: OwnerNode[]; links: Array<{ id: string; source_node_id: string; target_node_id: string; relationship_type: RelationshipType }>; linksError: string; onChanged: () => Promise<void> }) {
   const [form, setForm] = useState<NodeInput>(emptyNode)
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [newCoverFile, setNewCoverFile] = useState<File | null>(null)
+  const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([])
+  const [newGalleryAltText, setNewGalleryAltText] = useState('')
 
   useEffect(() => {
     setForm(node ? { type: node.type, slug: node.slug, title: node.title, summary: node.summary, markdown_content: node.markdown_content, project_url: node.project_url ?? '', creator: node.creator ?? '', source_name: node.source_name ?? '', source_url: node.source_url ?? '', status: node.status } : emptyNode)
     setError('')
+    setNewCoverFile(null)
+    setNewGalleryFiles([])
+    setNewGalleryAltText('')
   }, [node])
 
   function updateField(field: keyof NodeInput, value: string) { setForm((current) => ({ ...current, [field]: value })) }
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setError(''); setIsSaving(true); try { const clean = { ...form, slug: form.slug.trim(), title: form.title.trim(), summary: form.summary.trim(), markdown_content: form.markdown_content.trim(), project_url: form.project_url.trim(), creator: form.creator.trim(), source_name: form.source_name.trim(), source_url: form.source_url.trim() }; if (node) await updateNode(node.id, clean, node.published_at); else await createNode(clean); await onChanged() } catch (saveError) { setError(readableError(saveError, 'Could not save this item.')) } finally { setIsSaving(false) } }
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const galleryDescriptions = newGalleryAltText.split('\n').map((text) => text.trim()).filter(Boolean)
+    if (!node && newGalleryFiles.length && galleryDescriptions.length !== newGalleryFiles.length) {
+      setError('Enter one non-empty photo description per selected Journal image, in the same order.')
+      return
+    }
+
+    setError('')
+    setIsSaving(true)
+    try {
+      const clean = { ...form, slug: form.slug.trim(), title: form.title.trim(), summary: form.summary.trim(), markdown_content: form.markdown_content.trim(), project_url: form.project_url.trim(), creator: form.creator.trim(), source_name: form.source_name.trim(), source_url: form.source_url.trim() }
+      if (node) {
+        await updateNode(node.id, clean, node.published_at)
+      } else {
+        const created = await createNode(clean)
+        if (newCoverFile) {
+          const storagePath = await uploadPortfolioImage(ownerId, created.id, newCoverFile)
+          await updateNodeCoverImage(created.id, storagePath)
+        }
+        for (const [index, file] of newGalleryFiles.entries()) {
+          const storagePath = await uploadPortfolioImage(ownerId, created.id, file)
+          await createNodeMedia({ node_id: created.id, storage_path: storagePath, alt_text: galleryDescriptions[index], ordinal: index })
+        }
+      }
+      await onChanged()
+    } catch (saveError) {
+      setError(readableError(saveError, 'Could not save this item and its selected images. The item may still have been created; check your content list before trying again.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
   async function handleDelete() { if (!node || !window.confirm(`Delete “${node.title}”? This cannot be undone.`)) return; try { await deleteNode(node.id); await onChanged() } catch (deleteError) { setError(readableError(deleteError, 'Could not delete this item.')) } }
 
-  const externalType = form.type === 'article' || form.type === 'book' || form.type === 'music'
-  const creatorLabel = form.type === 'article' || form.type === 'book' ? 'Author (optional)' : 'Artist or creator (optional)'
-  const sourceNameLabel = form.type === 'article' ? 'Publication or site (optional)' : form.type === 'book' ? 'Publisher (optional)' : 'Album, platform, or context (optional)'
-  const sourceUrlLabel = form.type === 'article' ? 'Article URL (optional)' : form.type === 'book' ? 'Book URL (optional)' : 'Listening URL (optional)'
+  const externalType = form.type === 'article' || form.type === 'book' || form.type === 'music' || form.type === 'film'
+  const creatorLabel = form.type === 'article' || form.type === 'book' ? 'Author (optional)' : form.type === 'film' ? 'Director or creator (optional)' : 'Artist or creator (optional)'
+  const sourceNameLabel = form.type === 'article' ? 'Publication or site (optional)' : form.type === 'book' ? 'Publisher (optional)' : form.type === 'film' ? 'Studio, platform, or context (optional)' : 'Album, platform, or context (optional)'
+  const sourceUrlLabel = form.type === 'article' ? 'Article URL (optional)' : form.type === 'book' ? 'Book URL (optional)' : form.type === 'film' ? 'Film URL (optional)' : 'Listening URL (optional)'
 
-  return <section className="editor-panel" aria-labelledby="editor-heading"><p className="eyebrow">{node ? `Edit ${nodeTypeLabel(node.type).toLowerCase()}` : 'New portfolio item'}</p><h2 id="editor-heading">{node ? node.title : 'Start a new piece'}</h2><form className="reflection-form" onSubmit={handleSubmit}><label>Content type<select value={form.type} onChange={(event) => updateField('type', event.target.value)} disabled={Boolean(node)}><option value="reflection">Reflection</option><option value="project">Project</option><option value="article">Article</option><option value="book">Book</option><option value="music">Music</option></select></label><label>Title<input value={form.title} onChange={(event) => updateField('title', event.target.value)} maxLength={160} required /></label><label>Short summary<input value={form.summary} onChange={(event) => updateField('summary', event.target.value)} maxLength={320} required /></label><label>Public URL slug<input value={form.slug} onChange={(event) => updateField('slug', event.target.value)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" title="Use lowercase words separated by hyphens." required /></label>{form.type === 'project' ? <label>Project URL (optional)<input type="url" value={form.project_url} onChange={(event) => updateField('project_url', event.target.value)} placeholder="https://…" /></label> : null}{externalType ? <><label>{creatorLabel}<input value={form.creator} onChange={(event) => updateField('creator', event.target.value)} /></label><label>{sourceNameLabel}<input value={form.source_name} onChange={(event) => updateField('source_name', event.target.value)} /></label><label>{sourceUrlLabel}<input type="url" value={form.source_url} onChange={(event) => updateField('source_url', event.target.value)} placeholder="https://…" /></label></> : null}<label>{form.type === 'project' ? 'Project write-up' : externalType ? 'Your reflection on this source' : 'Your reflection'}<textarea rows={11} value={form.markdown_content} onChange={(event) => updateField('markdown_content', event.target.value)} required /></label><fieldset><legend>Visibility</legend><label className="radio-label"><input type="radio" checked={form.status === 'draft'} onChange={() => setForm((current) => ({ ...current, status: 'draft' as NodeStatus }))} /> Save as draft</label><label className="radio-label"><input type="radio" checked={form.status === 'published'} onChange={() => setForm((current) => ({ ...current, status: 'published' as NodeStatus }))} /> Publish publicly</label></fieldset>{error ? <p className="form-error" role="alert">{error}</p> : null}<div className="editor-actions"><button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : node ? 'Save changes' : 'Create item'}</button>{node ? <button className="danger-button" type="button" onClick={() => void handleDelete()}>Delete</button> : null}</div></form>{node ? <SemanticPanel node={node} onChanged={onChanged} /> : null}{node ? <ConnectionsEditor node={node} nodes={nodes} links={links} linksError={linksError} onChanged={onChanged} /> : null}</section>
+  return <section className="editor-panel" aria-labelledby="editor-heading"><p className="eyebrow">{node ? `Edit ${nodeTypeLabel(node.type).toLowerCase()}` : 'New portfolio item'}</p><h2 id="editor-heading">{node ? node.title : 'Start a new piece'}</h2><form className="reflection-form" onSubmit={handleSubmit}><label>Content type<select value={form.type} onChange={(event) => updateField('type', event.target.value as NodeType)} disabled={Boolean(node)}><option value="reflection">Journal</option><option value="project">Project</option><option value="article">Article</option><option value="book">Book</option><option value="music">Music</option><option value="film">Film</option></select></label><label>Title<input value={form.title} onChange={(event) => updateField('title', event.target.value)} maxLength={160} required /></label><label>Short summary<input value={form.summary} onChange={(event) => updateField('summary', event.target.value)} maxLength={320} required /></label><label>Public URL slug<input value={form.slug} onChange={(event) => updateField('slug', event.target.value)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" title="Use lowercase words separated by hyphens." required /></label>{form.type === 'project' ? <label>Project URL (optional)<input type="url" value={form.project_url} onChange={(event) => updateField('project_url', event.target.value)} placeholder="https://…" /></label> : null}{externalType ? <><label>{creatorLabel}<input value={form.creator} onChange={(event) => updateField('creator', event.target.value)} /></label><label>{sourceNameLabel}<input value={form.source_name} onChange={(event) => updateField('source_name', event.target.value)} /></label><label>{sourceUrlLabel}<input type="url" value={form.source_url} onChange={(event) => updateField('source_url', event.target.value)} placeholder="https://…" /></label></> : null}<label>{form.type === 'project' ? 'Project write-up' : externalType ? 'Your reflection on this source' : 'Your Journal entry'}<textarea rows={11} value={form.markdown_content} onChange={(event) => updateField('markdown_content', event.target.value)} required /></label>{!node ? <fieldset className="new-item-media"><legend>Images (optional)</legend><p className="muted-copy">Choose files now; they upload automatically after the item is created. JPEG, PNG, or WebP, up to 5 MB each.</p><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewCoverFile(event.target.files?.[0] ?? null)} /></label>{form.type === 'reflection' ? <><label>Journal photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewGalleryFiles(Array.from(event.target.files ?? []))} /></label>{newGalleryFiles.length ? <label>Photo descriptions — one per line, in file order<textarea rows={4} value={newGalleryAltText} onChange={(event) => setNewGalleryAltText(event.target.value)} placeholder={'First photo description\nSecond photo description'} required /></label> : null}</> : null}</fieldset> : null}<fieldset><legend>Visibility</legend><label className="radio-label"><input type="radio" checked={form.status === 'draft'} onChange={() => setForm((current) => ({ ...current, status: 'draft' as NodeStatus }))} /> Save as draft</label><label className="radio-label"><input type="radio" checked={form.status === 'published'} onChange={() => setForm((current) => ({ ...current, status: 'published' as NodeStatus }))} /> Publish publicly</label></fieldset>{error ? <p className="form-error" role="alert">{error}</p> : null}<div className="editor-actions"><button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : node ? 'Save changes' : 'Create item'}</button>{node ? <button className="danger-button" type="button" onClick={() => void handleDelete()}>Delete</button> : null}</div></form>{node ? <MediaManager node={node} ownerId={ownerId} /> : null}{node ? <SemanticPanel node={node} onChanged={onChanged} /> : null}{node ? <ConnectionsEditor node={node} nodes={nodes} links={links} linksError={linksError} onChanged={onChanged} /> : null}</section>
+}
+
+function MediaManager({ node, ownerId }: { node: OwnerNode; ownerId: string }) {
+  const [coverPath, setCoverPath] = useState<string | null>(node.cover_image_path)
+  const [photos, setPhotos] = useState<NodeMedia[]>([])
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const [galleryAltText, setGalleryAltText] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [isWorking, setIsWorking] = useState(false)
+
+  const refreshMedia = useCallback(async () => {
+    const nextPhotos = await getNodeMedia(node.id)
+    const paths = [...new Set([coverPath, ...nextPhotos.map((photo) => photo.storage_path)].filter((path): path is string => Boolean(path)))]
+    setPhotos(nextPhotos)
+    setImageUrls(await getSignedImageUrls(paths))
+  }, [coverPath, node.id])
+
+  useEffect(() => {
+    setCoverPath(node.cover_image_path)
+  }, [node.cover_image_path, node.id])
+
+  useEffect(() => {
+    void refreshMedia().catch((loadError) => setError(readableError(loadError, 'Could not load this item’s images.')))
+  }, [refreshMedia])
+
+  async function uploadCover(file: File | undefined) {
+    if (!file) return
+    setError('')
+    setMessage('')
+    setIsWorking(true)
+    try {
+      const storagePath = await uploadPortfolioImage(ownerId, node.id, file)
+      await updateNodeCoverImage(node.id, storagePath)
+      setCoverPath(storagePath)
+      setMessage('Cover image uploaded.')
+    } catch (uploadError) {
+      setError(readableError(uploadError, 'Could not upload the cover image.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  async function clearCover() {
+    setError('')
+    setIsWorking(true)
+    try {
+      await updateNodeCoverImage(node.id, null)
+      setCoverPath(null)
+      setMessage('Cover image removed from this item.')
+    } catch (coverError) {
+      setError(readableError(coverError, 'Could not remove the cover image.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  async function uploadGallery(files: FileList | null) {
+    const selectedFiles = files ? Array.from(files) : []
+    if (!selectedFiles.length) return
+    const descriptions = galleryAltText.split('\n').map((text) => text.trim()).filter(Boolean)
+    if (descriptions.length !== selectedFiles.length) {
+      setError('Enter one non-empty alt-text description per selected photo, in the same order.')
+      return
+    }
+    setError('')
+    setMessage('')
+    setIsWorking(true)
+    try {
+      let nextOrdinal = photos.length ? Math.max(...photos.map((photo) => photo.ordinal)) + 1 : 0
+      for (const [index, file] of selectedFiles.entries()) {
+        const storagePath = await uploadPortfolioImage(ownerId, node.id, file)
+        try {
+          await createNodeMedia({ node_id: node.id, storage_path: storagePath, alt_text: descriptions[index], ordinal: nextOrdinal })
+        } catch (mediaError) {
+          await removePortfolioImage(storagePath).catch(() => undefined)
+          throw mediaError
+        }
+        nextOrdinal += 1
+      }
+      setGalleryAltText('')
+      await refreshMedia()
+      setMessage(`${selectedFiles.length} Journal photo${selectedFiles.length === 1 ? '' : 's'} added.`)
+    } catch (uploadError) {
+      setError(readableError(uploadError, 'Could not add the Journal photos.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  async function saveAltText(photo: NodeMedia, altText: string) {
+    const cleanAltText = altText.trim()
+    if (!cleanAltText || cleanAltText === photo.alt_text) return
+    try {
+      await updateNodeMedia(photo.id, { alt_text: cleanAltText })
+      await refreshMedia()
+    } catch (altError) {
+      setError(readableError(altError, 'Could not update the image description.'))
+    }
+  }
+
+  async function movePhoto(photo: NodeMedia, direction: -1 | 1) {
+    const currentIndex = photos.findIndex((item) => item.id === photo.id)
+    const neighbor = photos[currentIndex + direction]
+    if (!neighbor) return
+    setError('')
+    setIsWorking(true)
+    try {
+      const temporaryOrdinal = Math.max(...photos.map((item) => item.ordinal)) + 1
+      await updateNodeMedia(photo.id, { ordinal: temporaryOrdinal })
+      await updateNodeMedia(neighbor.id, { ordinal: photo.ordinal })
+      await updateNodeMedia(photo.id, { ordinal: neighbor.ordinal })
+      await refreshMedia()
+    } catch (moveError) {
+      setError(readableError(moveError, 'Could not reorder the Journal photos.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  async function removePhoto(photo: NodeMedia) {
+    if (!window.confirm('Remove this photo from the Journal entry?')) return
+    setError('')
+    setIsWorking(true)
+    try {
+      await deleteNodeMedia(photo.id)
+      await removePortfolioImage(photo.storage_path)
+      if (coverPath === photo.storage_path) {
+        await updateNodeCoverImage(node.id, null)
+        setCoverPath(null)
+      }
+      await refreshMedia()
+      setMessage('Journal photo removed.')
+    } catch (deleteError) {
+      setError(readableError(deleteError, 'Could not remove the Journal photo.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  async function makeCover(photo: NodeMedia) {
+    setError('')
+    setIsWorking(true)
+    try {
+      await updateNodeCoverImage(node.id, photo.storage_path)
+      setCoverPath(photo.storage_path)
+      setMessage('This Journal photo is now the cover image.')
+    } catch (coverError) {
+      setError(readableError(coverError, 'Could not set the cover image.'))
+    } finally {
+      setIsWorking(false)
+    }
+  }
+
+  return <section className="media-manager" aria-labelledby="media-manager-heading"><p className="eyebrow">Images</p><h3 id="media-manager-heading">Cover image{node.type === 'reflection' ? ' and photo journal' : ''}</h3><p className="muted-copy">JPEG, PNG, or WebP only, up to 5 MB. Images remain private until this item is published.</p>{coverPath && imageUrls[coverPath] ? <img className="admin-cover-preview" src={imageUrls[coverPath]} alt={`Current cover for ${node.title}`} /> : null}<label className="upload-control">Upload or replace cover<input type="file" accept="image/jpeg,image/png,image/webp" disabled={isWorking} onChange={(event) => { void uploadCover(event.target.files?.[0]); event.currentTarget.value = '' }} /></label>{coverPath ? <button className="quiet-button" type="button" disabled={isWorking} onClick={() => void clearCover()}>Remove cover</button> : null}{node.type === 'reflection' ? <div className="gallery-editor"><h4>Journal photos</h4><p className="muted-copy">You can select several photos. Add one description per line, in the same order as the files.</p><label>Photo descriptions<textarea rows={4} value={galleryAltText} onChange={(event) => setGalleryAltText(event.target.value)} placeholder={'First photo description\nSecond photo description'} /></label><label className="upload-control">Add Journal photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={isWorking} onChange={(event) => { void uploadGallery(event.target.files); event.currentTarget.value = '' }} /></label><div className="gallery-admin-list">{photos.map((photo, index) => <article key={photo.id}><img src={imageUrls[photo.storage_path]} alt={photo.alt_text} /><div><label>Alt text<input defaultValue={photo.alt_text} onBlur={(event) => void saveAltText(photo, event.target.value)} /></label><div className="editor-actions"><button className="quiet-button" type="button" disabled={isWorking || index === 0} onClick={() => void movePhoto(photo, -1)}>Move up</button><button className="quiet-button" type="button" disabled={isWorking || index === photos.length - 1} onClick={() => void movePhoto(photo, 1)}>Move down</button>{coverPath !== photo.storage_path ? <button className="quiet-button" type="button" disabled={isWorking} onClick={() => void makeCover(photo)}>Use as cover</button> : null}<button className="danger-button" type="button" disabled={isWorking} onClick={() => void removePhoto(photo)}>Remove</button></div></div></article>)}</div></div> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}{message ? <p className="muted-copy" role="status">{message}</p> : null}</section>
 }
 
 function SemanticPanel({ node, onChanged }: { node: OwnerNode; onChanged: () => Promise<void> }) {

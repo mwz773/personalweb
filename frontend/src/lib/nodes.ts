@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export type NodeType = 'reflection' | 'project' | 'article' | 'book' | 'music'
+export type NodeType = 'reflection' | 'project' | 'article' | 'book' | 'music' | 'film'
 export type NodeStatus = 'draft' | 'published'
 export type RelationshipType = 'related_to' | 'inspired_by' | 'cites' | 'extends' | 'contrasts_with'
 
@@ -15,7 +15,28 @@ export type PortfolioNode = {
   creator: string | null
   source_name: string | null
   source_url: string | null
+  cover_image_path: string | null
+  external_source: string | null
+  external_id: string | null
+  media_metadata: Record<string, unknown>
+  tags: string[]
   published_at: string | null
+}
+
+export type NodeMedia = {
+  id: string
+  node_id: string
+  storage_path: string
+  alt_text: string
+  ordinal: number
+  created_at: string
+}
+
+export type LetterboxdFilmImport = {
+  title: string
+  year: string
+  letterboxdUrl: string
+  review: string
 }
 
 export type OwnerNode = PortfolioNode & {
@@ -53,7 +74,7 @@ export type PublicGraph = {
 }
 
 const publicNodeFields =
-  'id, slug, type, title, summary, markdown_content, project_url, creator, source_name, source_url, published_at'
+  'id, slug, type, title, summary, markdown_content, project_url, creator, source_name, source_url, cover_image_path, external_source, external_id, media_metadata, tags, published_at'
 const ownerNodeFields = `${publicNodeFields}, status, updated_at, embedding_status, embedding_model, last_embedded_at, embedding_error`
 
 export function publicPath(node: Pick<PortfolioNode, 'type' | 'slug'>): string {
@@ -63,17 +84,19 @@ export function publicPath(node: Pick<PortfolioNode, 'type' | 'slug'>): string {
     article: 'articles',
     book: 'books',
     music: 'music',
+    film: 'films',
   }
   return `/${prefixes[node.type]}/${node.slug}`
 }
 
 export function nodeTypeLabel(type: NodeType): string {
   return {
-    reflection: 'Reflection',
+    reflection: 'Journal',
     project: 'Project',
     article: 'Article',
     book: 'Book',
     music: 'Music',
+    film: 'Film',
   }[type]
 }
 
@@ -94,7 +117,7 @@ export async function getPublishedNodes(): Promise<PortfolioNode[]> {
     .from('nodes')
     .select(publicNodeFields)
     .eq('status', 'published')
-    .in('type', ['reflection', 'project', 'article', 'book', 'music'])
+    .in('type', ['reflection', 'project', 'article', 'book', 'music', 'film'])
     .order('published_at', { ascending: false })
 
   if (error) throw error
@@ -125,26 +148,79 @@ export async function getOwnerNodes(): Promise<OwnerNode[]> {
   const { data, error } = await supabase
     .from('nodes')
     .select(ownerNodeFields)
-    .in('type', ['reflection', 'project', 'article', 'book', 'music'])
+    .in('type', ['reflection', 'project', 'article', 'book', 'music', 'film'])
     .order('updated_at', { ascending: false })
 
   if (error) throw error
   return data as OwnerNode[]
 }
 
-export async function createNode(input: NodeInput): Promise<void> {
+export async function createNode(input: NodeInput): Promise<OwnerNode> {
   if (!supabase) throw new Error('Supabase is not configured.')
 
-  const { error } = await supabase.from('nodes').insert({
-    ...input,
-    project_url: input.type === 'project' ? input.project_url || null : null,
-    creator: input.creator || null,
-    source_name: input.source_name || null,
-    source_url: input.source_url || null,
-    published_at: input.status === 'published' ? new Date().toISOString() : null,
-  })
+  const { data, error } = await supabase.from('nodes').insert({
+      ...input,
+      project_url: input.type === 'project' ? input.project_url || null : null,
+      creator: input.creator || null,
+      source_name: input.source_name || null,
+      source_url: input.source_url || null,
+      published_at: input.status === 'published' ? new Date().toISOString() : null,
+    })
+    .select(ownerNodeFields)
+    .single()
 
   if (error) throw error
+  return data as OwnerNode
+}
+
+export async function importLetterboxdFilms(
+  films: LetterboxdFilmImport[],
+  status: NodeStatus,
+): Promise<{ imported: number; skipped: number }> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const uniqueFilms = [...new Map(films.map((film) => [film.letterboxdUrl, film])).values()]
+  const { data: existing, error: existingError } = await supabase
+    .from('nodes')
+    .select('external_id')
+    .eq('external_source', 'letterboxd')
+    .in('external_id', uniqueFilms.map((film) => film.letterboxdUrl))
+  if (existingError) throw existingError
+
+  const existingIds = new Set((existing ?? []).map((node) => node.external_id))
+  const newFilms = uniqueFilms.filter((film) => !existingIds.has(film.letterboxdUrl))
+  const timestamp = new Date().toISOString()
+  const rows = newFilms.map((film) => {
+    const externalToken = film.letterboxdUrl.split('/').filter(Boolean).pop() ?? crypto.randomUUID()
+    const titleSlug = film.title
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .slice(0, 90) || 'film'
+    return {
+      type: 'film',
+      slug: `letterboxd-${titleSlug}-${film.year}-${externalToken}`.toLowerCase(),
+      title: film.title,
+      summary: film.year ? `A ${film.year} film logged on Letterboxd.` : 'A film logged on Letterboxd.',
+      markdown_content: film.review || 'Imported from my Letterboxd watch history. A longer reflection is forthcoming.',
+      status,
+      source_name: 'Letterboxd',
+      source_url: film.letterboxdUrl,
+      external_source: 'letterboxd',
+      external_id: film.letterboxdUrl,
+      media_metadata: film.year ? { year: film.year } : {},
+      published_at: status === 'published' ? timestamp : null,
+    }
+  })
+
+  for (let start = 0; start < rows.length; start += 50) {
+    const { error } = await supabase.from('nodes').insert(rows.slice(start, start + 50))
+    if (error) throw error
+  }
+
+  return { imported: rows.length, skipped: uniqueFilms.length - newFilms.length }
 }
 
 export async function updateNode(
@@ -177,6 +253,97 @@ export async function deleteNode(id: string): Promise<void> {
 
   const { error } = await supabase.from('nodes').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function updateNodeCoverImage(id: string, storagePath: string | null): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { error } = await supabase
+    .from('nodes')
+    .update({ cover_image_path: storagePath })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
+export async function getNodeMedia(nodeId: string): Promise<NodeMedia[]> {
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('node_media')
+    .select('id, node_id, storage_path, alt_text, ordinal, created_at')
+    .eq('node_id', nodeId)
+    .order('ordinal', { ascending: true })
+
+  if (error) throw error
+  return data as NodeMedia[]
+}
+
+export async function createNodeMedia(input: Pick<NodeMedia, 'node_id' | 'storage_path' | 'alt_text' | 'ordinal'>): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { error } = await supabase.from('node_media').insert(input)
+  if (error) throw error
+}
+
+export async function updateNodeMedia(id: string, updates: Partial<Pick<NodeMedia, 'alt_text' | 'ordinal'>>): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { error } = await supabase.from('node_media').update(updates).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteNodeMedia(id: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { error } = await supabase.from('node_media').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function uploadPortfolioImage(
+  ownerId: string,
+  nodeId: string,
+  file: File,
+): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Choose a JPEG, PNG, or WebP image.')
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Choose an image smaller than 5 MB.')
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase() || 'image'
+  const fileName = `${crypto.randomUUID()}.${extension}`
+  const storagePath = `${ownerId}/${nodeId}/${fileName}`
+  const { error } = await supabase.storage
+    .from('portfolio-media')
+    .upload(storagePath, file, { contentType: file.type, upsert: false })
+
+  if (error) throw error
+  return storagePath
+}
+
+export async function removePortfolioImage(storagePath: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { error } = await supabase.storage.from('portfolio-media').remove([storagePath])
+  if (error) throw error
+}
+
+export async function getSignedImageUrls(paths: string[]): Promise<Record<string, string>> {
+  if (!supabase || !paths.length) return {}
+
+  const { data, error } = await supabase.storage
+    .from('portfolio-media')
+    .createSignedUrls(paths, 60 * 60)
+  if (error) throw error
+
+  return Object.fromEntries(
+    (data ?? [])
+      .filter((item) => item.signedUrl)
+      .map((item) => [item.path, item.signedUrl]),
+  )
 }
 
 export async function getOwnerLinks(): Promise<NodeLink[]> {
