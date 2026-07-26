@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import ForceGraph2D from 'react-force-graph-2d'
+import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import './App.css'
 import headshot from './assets/headshot.jpg'
 import { getSession, signIn, signOut, type Session } from './lib/auth'
@@ -91,9 +91,14 @@ function isGraphPath(): boolean {
   return window.location.pathname === '/graph' || window.location.pathname === '/graph/'
 }
 
+function isCvPath(): boolean {
+  return window.location.pathname === '/cv' || window.location.pathname === '/cv/'
+}
+
 function App() {
   if (isAdminPath()) return <AdminApp />
   if (isGraphPath()) return <GraphPage />
+  if (isCvPath()) return <CvPage />
   return <PublicApp />
 }
 
@@ -133,7 +138,11 @@ function PublicApp() {
 }
 
 type GraphNode = PortfolioNode & { x?: number; y?: number }
-type GraphLink = { id: string; source: string; target: string; relationship_type: RelationshipType }
+type GraphLink = { id: string; source: string | GraphNode; target: string | GraphNode; relationship_type: RelationshipType }
+
+function graphEndpointId(endpoint: string | GraphNode): string {
+  return typeof endpoint === 'string' ? endpoint : endpoint.id
+}
 
 const graphTypeColors: Record<NodeType, string> = {
   reflection: '#7e8b70',
@@ -185,10 +194,10 @@ function GraphPage() {
     return nodes.filter((node) => activeTypes.has(node.type) && (!normalizedQuery || `${node.title} ${node.summary}`.toLowerCase().includes(normalizedQuery)))
   }, [activeTypes, nodes, query])
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
-  const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target)), [links, visibleIds])
-  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => link.source === selectedId || link.target === selectedId).flatMap((link) => [link.source, link.target]) : []), [selectedId, visibleLinks])
+  const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(graphEndpointId(link.source)) && visibleIds.has(graphEndpointId(link.target))), [links, visibleIds])
+  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId).flatMap((link) => [graphEndpointId(link.source), graphEndpointId(link.target)]) : []), [selectedId, visibleLinks])
   const selected = nodes.find((node) => node.id === selectedId) ?? null
-  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks }), [visibleLinks, visibleNodes])
+  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks.map((link) => ({ ...link, source: graphEndpointId(link.source), target: graphEndpointId(link.target) })) }), [visibleLinks, visibleNodes])
 
   function toggleType(type: NodeType) {
     setActiveTypes((current) => {
@@ -204,28 +213,57 @@ function GraphPage() {
   if (state === 'loading') return <StatusScreen message="Mapping published connections…" />
   if (state === 'error') return <StatusScreen title="Connection problem" message={error} detail={<a href="/">Return to the portfolio</a>} />
 
-  return <div className="graph-page"><header className="graph-header"><a className="graph-wordmark" href="/">✦ Your Name</a><div><a href="/" className="graph-back-link">Portfolio</a><span>Knowledge graph</span></div></header><main className="graph-main"><section className="graph-intro"><p className="eyebrow">Explore the threads</p><h1>Ideas in relation.</h1><p>Every line is a connection I have reviewed and chosen to make public. Drag to pan, scroll to zoom, and select a node to follow its thread.</p></section><section className="graph-workspace" aria-label="Interactive portfolio connection graph"><div className="graph-canvas" ref={graphContainerRef}><ForceGraph2D<GraphNode, GraphLink> width={graphSize.width} height={graphSize.height} graphData={graphData} backgroundColor="#0d0c0a" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const isSelected = node.id === selectedId; const isConnected = !selectedId || connectedIds.has(node.id); const radius = isSelected ? 7 : 5; context.globalAlpha = isConnected ? 1 : 0.22; if (isSelected) { context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI); context.strokeStyle = graphTypeColors[node.type]; context.lineWidth = 1.5 / scale; context.stroke() } context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (scale >= 0.8) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = isSelected ? '#fffaf2' : '#d7d1c7'; context.fillText(node.title.length > 27 ? `${node.title.slice(0, 25)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} nodeLabel={(node) => `${node.title} · ${nodeTypeLabel(node.type)}`} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} linkColor={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? '#e8a317' : 'rgba(255,255,255,0.16)'} linkWidth={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? 1.8 : 0.8} linkLabel={(link) => relationshipLabel(link.relationship_type)} cooldownTicks={100} /></div><aside className="graph-sidebar"><label className="graph-search-label" htmlFor="graph-filter">Filter graph</label><input id="graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div className="graph-sidebar-section"><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'graph-filter-toggle is-active' : 'graph-filter-toggle'} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#423f3a' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="graph-sidebar-section graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></section>{selected ? <section className="graph-selection" aria-live="polite"><i style={{ background: graphTypeColors[selected.type] }} /><div><p>{nodeTypeLabel(selected.type)}</p><h2>{selected.title}</h2><span>{selected.summary}</span></div><small>{Math.max(0, connectedIds.size - 1)} connections</small><a className="graph-open-link" href={publicPath(selected)}>Open item <span aria-hidden="true">→</span></a></section> : <p className="graph-instruction">Select a node to see its connections and read the item.</p>}</main></div>
+  return <div className="graph-page"><header className="graph-header"><a className="graph-wordmark" href="/">✦ Mandy Zhang</a><div><a href="/" className="graph-back-link">Portfolio</a><span>Knowledge graph</span></div></header><main className="graph-main"><section className="graph-intro"><p className="eyebrow">Explore the threads</p><h1>Ideas in relation.</h1><p>Every line is a connection I have reviewed and chosen to make public. Drag to pan, scroll to zoom, and select a node to follow its thread.</p></section><section className="graph-workspace" aria-label="Interactive portfolio connection graph"><div className="graph-canvas" ref={graphContainerRef}><ForceGraph2D<GraphNode, GraphLink> width={graphSize.width} height={graphSize.height} graphData={graphData} backgroundColor="#0d0c0a" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const isSelected = node.id === selectedId; const isConnected = !selectedId || connectedIds.has(node.id); const radius = isSelected ? 7 : 5; context.globalAlpha = isConnected ? 1 : 0.22; if (isSelected) { context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI); context.strokeStyle = graphTypeColors[node.type]; context.lineWidth = 1.5 / scale; context.stroke() } context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (scale >= 0.8) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = isSelected ? '#fffaf2' : '#d7d1c7'; context.fillText(node.title.length > 27 ? `${node.title.slice(0, 25)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} nodeLabel={(node) => `${node.title} · ${nodeTypeLabel(node.type)}`} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} linkColor={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? '#e8a317' : 'rgba(255,255,255,0.16)'} linkWidth={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? 1.8 : 0.8} linkLabel={(link) => relationshipLabel(link.relationship_type)} cooldownTicks={100} /></div><aside className="graph-sidebar"><label className="graph-search-label" htmlFor="graph-filter">Filter graph</label><input id="graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div className="graph-sidebar-section"><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'graph-filter-toggle is-active' : 'graph-filter-toggle'} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#423f3a' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="graph-sidebar-section graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></section>{selected ? <section className="graph-selection" aria-live="polite"><i style={{ background: graphTypeColors[selected.type] }} /><div><p>{nodeTypeLabel(selected.type)}</p><h2>{selected.title}</h2><span>{selected.summary}</span></div><small>{Math.max(0, connectedIds.size - 1)} connections</small><a className="graph-open-link" href={publicPath(selected)}>Open item <span aria-hidden="true">→</span></a></section> : <p className="graph-instruction">Select a node to see its connections and read the item.</p>}</main></div>
 }
 
 function SiteHeader({ admin = false }: { admin?: boolean }) {
-  return <header className="site-header"><a className="wordmark" href="/"><span aria-hidden="true">✦</span> Your Name</a>{admin ? <span className="header-note">Owner dashboard</span> : <a className="header-note graph-nav-link" href="/#knowledge-graph">Knowledge graph</a>}</header>
+  return <header className="site-header"><a className="wordmark" href="/"><span aria-hidden="true">✦</span> Mandy Zhang</a>{admin ? <span className="header-note">Owner dashboard</span> : <a className="header-note graph-nav-link" href="/#knowledge-graph">Knowledge graph</a>}</header>
 }
 
 function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
   return (
     <main className="hub-page">
-      <header className="hub-header"><a className="hub-name" href="/">Your Name</a><p>writer, researcher, and curious person <a href="#knowledge-graph">mapping ideas</a>.</p><nav aria-label="Personal links"><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header>
+      <header className="hub-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="Personal links"><a href="/cv">Resume</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header>
       <AboutSection />
       <HubGraph />
       <MediaGrid nodes={nodes} />
       <section className="hub-search"><SemanticSearch /></section>
-      <footer className="hub-footer"><span>© {new Date().getFullYear()} Your Name</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
+      <footer className="hub-footer"><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
 }
 
 function AboutSection() {
-  return <section className="about-section" aria-labelledby="about-heading"><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." /></div><div className="about-copy"><h1 id="about-heading">Hi, I’m Mandy.</h1><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Always happy to connect with folks working in AI, engineering, or social impact — feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a>.</p></div></section>
+  return <section className="about-section" aria-labelledby="about-heading"><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
+}
+
+type CvExperience = {
+  role: string
+  dates: string
+  company: string
+  location: string
+  details: string[]
+}
+
+const cvExperiences: CvExperience[] = [
+  { role: 'AI Engineer', dates: 'Jun 2026 — Present', company: 'The Options Clearing Corporation', location: 'Chicago, IL', details: ['Architecting a medallion data pipeline for AI-adoption metrics across 1,300+ employees.', 'Building a Claude Agent SDK evaluation framework for Tier-1 SOC alert triage, balancing accuracy, cost, and speed.'] },
+  { role: 'Data Scientist', dates: 'Oct 2025 — Apr 2026', company: 'Vera Institute', location: 'New York City, NY', details: ['Evaluated Azure OpenAI and Document Intelligence approaches for extracting structured data from legal documents.', 'Built Azure Blob Storage ingestion and extraction workflows in Python, with implementation guides for the team.'] },
+  { role: 'Product Manager — nenos Inc.', dates: 'Oct 2025 — Mar 2026', company: 'Develop for Good', location: 'Remote', details: ['Wrote the product requirements document and maintained a milestone roadmap for a five-month website redesign.', 'Led sprint planning and client meetings for a six-person engineering and design team.'] },
+  { role: 'Tobin Undergraduate Research Assistant', dates: 'Sep 2025 — Jan 2026', company: 'Livable City Lab', location: 'New Haven, CT', details: ['Fine-tuned a YOLO computer-vision model to recognize objects in geospatial video data.', 'Engineered Python pipelines for frame extraction, classification, geo-projection, model validation, and trajectory computation.'] },
+  { role: 'Data Science Intern', dates: 'May 2025 — Aug 2025', company: 'Steelcase', location: 'Grand Rapids, MI', details: ['Built a PySpark and scikit-learn K-means model that surfaced product lines for standardization, with an estimated $10–15M annual savings opportunity.', 'Created sentence-transformer embeddings, analyzed purchasing patterns, and delivered Tableau dashboards for decision-makers.'] },
+  { role: 'ONEXYS Supercoach', dates: 'May 2023 — Aug 2025', company: 'Yale University', location: 'Remote · Seasonal', details: ['Led a 53-member coaching team supporting 150+ incoming students.', 'Facilitated weekly strategy meetings and quantitative-skills instruction to strengthen academic performance.'] },
+]
+
+const cvSkills = [
+  ['Languages', 'Python', 'JavaScript / TypeScript', 'SQL', 'C', 'R', 'HTML / CSS', 'Racket', 'PySpark'],
+  ['ML & data', 'Pandas', 'NumPy', 'scikit-learn', 'TensorFlow', 'PyTorch', 'Roboflow', 'OpenCV', 'NLTK'],
+  ['Frameworks', 'React', 'Flask', 'Node.js', 'Express.js'],
+  ['Data & cloud', 'Databricks', 'Microsoft AI Foundry', 'Azure', 'BigQuery', 'MongoDB'],
+  ['Tools', 'Git', 'SQLAlchemy', 'Jupyter', 'Tableau', 'VS Code'],
+]
+
+function CvPage() {
+  return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building useful things with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · GPA 3.74 / 4.00</p><p>Coursework includes algorithms, artificial intelligence, machine learning, full-stack web development, systems programming, security, and human-computer interaction.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
 }
 
 
@@ -237,6 +275,7 @@ function HubGraph() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const graphRef = useRef<HTMLDivElement>(null)
+  const forceGraphRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
   const [size, setSize] = useState({ width: 740, height: 560 })
 
   useEffect(() => {
@@ -255,10 +294,10 @@ function HubGraph() {
     return nodes.filter((node) => activeTypes.has(node.type) && (!normalizedQuery || `${node.title} ${node.summary}`.toLowerCase().includes(normalizedQuery)))
   }, [activeTypes, nodes, query])
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
-  const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target)), [links, visibleIds])
-  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => link.source === selectedId || link.target === selectedId).flatMap((link) => [link.source, link.target]) : []), [selectedId, visibleLinks])
+  const visibleLinks = useMemo(() => links.filter((link) => visibleIds.has(graphEndpointId(link.source)) && visibleIds.has(graphEndpointId(link.target))), [links, visibleIds])
+  const connectedIds = useMemo(() => new Set(selectedId ? visibleLinks.filter((link) => graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId).flatMap((link) => [graphEndpointId(link.source), graphEndpointId(link.target)]) : []), [selectedId, visibleLinks])
   const selected = nodes.find((node) => node.id === selectedId) ?? null
-  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks }), [visibleLinks, visibleNodes])
+  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks.map((link) => ({ ...link, source: graphEndpointId(link.source), target: graphEndpointId(link.target) })) }), [visibleLinks, visibleNodes])
 
   function toggleType(type: NodeType) {
     setActiveTypes((current) => {
@@ -270,8 +309,15 @@ function HubGraph() {
     })
   }
 
+  function resetGraphView() {
+    setActiveTypes(new Set(['reflection', 'project', 'article', 'book', 'music', 'film']))
+    setSelectedId(null)
+    setQuery('')
+    window.requestAnimationFrame(() => forceGraphRef.current?.zoomToFit(450, 42))
+  }
+
   if (state === 'error') return null
-  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading"><div className="hub-section-heading"><h1 id="hub-graph-heading">Mandy's Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> width={size.width} height={size.height} graphData={graphData} backgroundColor="#5d432c" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === selectedId; const connected = !selectedId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px ui-sans-serif, system-ui`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? '#e8a317' : 'rgba(246,238,229,.32)'} linkWidth={(link) => selectedId && (link.source === selectedId || link.target === selectedId) ? 1.8 : .8} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
+  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading"><div className="hub-section-heading"><h1 id="hub-graph-heading">Mandy's Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#5d432c" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === selectedId; const connected = !selectedId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px ui-sans-serif, system-ui`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? '#e8a317' : 'rgba(246,238,229,.32)'} linkWidth={(link) => selectedId && (graphEndpointId(link.source) === selectedId || graphEndpointId(link.target) === selectedId) ? 1.8 : .8} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
 }
 
 function MediaGrid({ nodes }: { nodes: PortfolioNode[] }) {
