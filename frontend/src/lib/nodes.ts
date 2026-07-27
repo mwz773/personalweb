@@ -15,6 +15,7 @@ export type PortfolioNode = {
   creator: string | null
   source_name: string | null
   source_url: string | null
+  location_name: string | null
   cover_image_path: string | null
   external_source: string | null
   external_id: string | null
@@ -58,6 +59,7 @@ export type NodeInput = {
   creator: string
   source_name: string
   source_url: string
+  location_name: string
   status: NodeStatus
 }
 
@@ -74,7 +76,9 @@ export type PublicGraph = {
 }
 
 const publicNodeFields =
-  'id, slug, type, title, summary, markdown_content, project_url, creator, source_name, source_url, cover_image_path, external_source, external_id, media_metadata, tags, published_at'
+  'id, slug, type, title, summary, markdown_content, project_url, creator, source_name, source_url, location_name, cover_image_path, external_source, external_id, media_metadata, tags, published_at'
+const publicNodeListFields =
+  'id, slug, type, title, summary, project_url, creator, source_name, source_url, location_name, cover_image_path, external_source, external_id, media_metadata, tags, published_at'
 const ownerNodeFields = `${publicNodeFields}, status, updated_at, embedding_status, embedding_model, last_embedded_at, embedding_error`
 
 export function publicPath(node: Pick<PortfolioNode, 'type' | 'slug'>): string {
@@ -164,6 +168,7 @@ export async function createNode(input: NodeInput): Promise<OwnerNode> {
       creator: input.creator || null,
       source_name: input.source_name || null,
       source_url: input.source_url || null,
+      location_name: input.type === 'reflection' ? input.location_name || null : null,
       published_at: input.status === 'published' ? new Date().toISOString() : null,
     })
     .select(ownerNodeFields)
@@ -238,6 +243,7 @@ export async function updateNode(
       creator: input.creator || null,
       source_name: input.source_name || null,
       source_url: input.source_url || null,
+      location_name: input.type === 'reflection' ? input.location_name || null : null,
       published_at:
         input.status === 'published'
           ? (existingPublishedAt ?? new Date().toISOString())

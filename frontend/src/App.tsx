@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import './App.css'
 import headshot from './assets/headshot.jpg'
@@ -39,6 +39,8 @@ import {
 } from './lib/nodes'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
+const JournalGlobe = lazy(() => import('./components/JournalGlobe'))
+
 type LoadState = 'loading' | 'ready' | 'error'
 
 function useScrollReveal<T extends HTMLElement>() {
@@ -76,6 +78,7 @@ const emptyNode: NodeInput = {
   creator: '',
   source_name: '',
   source_url: '',
+  location_name: '',
   status: 'draft',
 }
 
@@ -123,6 +126,10 @@ function isLibraryPath(): boolean {
   return window.location.pathname === '/library' || window.location.pathname === '/library/'
 }
 
+function isJournalPath(): boolean {
+  return window.location.pathname === '/journal' || window.location.pathname === '/journal/'
+}
+
 function App() {
   if (isAdminPath()) return <AdminApp />
   if (isGraphPath()) return <GraphPage />
@@ -137,6 +144,7 @@ function PublicApp() {
   const [error, setError] = useState('')
   const route = publicRoute()
   const isLibrary = isLibraryPath()
+  const isJournal = isJournalPath()
   const routeType = route?.type
   const routeSlug = route?.slug
 
@@ -163,7 +171,7 @@ function PublicApp() {
   if (state === 'loading') return <StatusScreen message="Loading published work…" />
   if (state === 'error') return <StatusScreen title="Connection problem" message={error} detail="Check your Supabase configuration and database setup." />
   if (route) return <NodePage node={node} />
-  if (isLibrary) return <LibraryPage nodes={nodes} />
+  if (isLibrary || isJournal) return <LibraryPage nodes={nodes} initialFilter={isJournal ? 'reflection' : 'all'} />
   return <HomePage nodes={nodes} />
 }
 
@@ -267,15 +275,15 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
       </header>
       <AboutSection />
       <HubGraph />
-      <MediaGrid nodes={nodes} limit={10} showLibraryLink />
+      <MediaGrid nodes={nodes} showLibraryLink showControls={false} />
       <footer className="hub-footer" data-reveal><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
 }
 
-function LibraryPage({ nodes }: { nodes: PortfolioNode[] }) {
+function LibraryPage({ nodes, initialFilter = 'all' }: { nodes: PortfolioNode[]; initialFilter?: 'all' | 'book' | 'film' | 'music' | 'reflection' }) {
   const libraryRef = useScrollReveal<HTMLElement>()
-  return <main className="hub-page library-page" ref={libraryRef}><header className="hub-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="Personal links"><a href="/">Home</a><a href="/cv">Resume</a><a href="/library">Library</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header><MediaGrid nodes={nodes} /><footer className="hub-footer"><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer></main>
+  return <main className="hub-page library-page" ref={libraryRef}><header className="hub-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="Personal links"><a href="/">Home</a><a href="/cv">Resume</a><a href="/library">Library</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a><a href="mailto:mandy.zhang@yale.edu">Email</a></nav></header><MediaGrid nodes={nodes} initialFilter={initialFilter} /><footer className="hub-footer"><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer></main>
 }
 
 function AboutSection() {
@@ -291,7 +299,7 @@ type CvExperience = {
 }
 
 const cvExperiences: CvExperience[] = [
-  { role: 'AI Engineer', dates: 'Jun 2026 — Present', company: 'The Options Clearing Corporation', location: 'Chicago, IL', details: ['Architecting a medallion data pipeline for AI-adoption metrics across 1,300+ employees.', 'Building a Claude Agent SDK evaluation framework for Tier-1 SOC alert triage, balancing accuracy, cost, and speed.'] },
+  { role: 'AI Engineer', dates: 'Jun 2026 — Present', company: 'Options Clearing Corporation', location: 'Chicago, IL', details: ['Architecting a medallion data pipeline for AI-adoption metrics across 1,300+ employees.', 'Building a Claude Agent SDK evaluation framework for Tier-1 SOC alert triage, balancing accuracy, cost, and speed.'] },
   { role: 'Data Scientist', dates: 'Oct 2025 — Apr 2026', company: 'Vera Institute', location: 'New York City, NY', details: ['Evaluated Azure OpenAI and Document Intelligence approaches for extracting structured data from legal documents.', 'Built Azure Blob Storage ingestion and extraction workflows in Python, with implementation guides for the team.'] },
   { role: 'Product Manager — nenos Inc.', dates: 'Oct 2025 — Mar 2026', company: 'Develop for Good', location: 'Remote', details: ['Wrote the product requirements document and maintained a milestone roadmap for a five-month website redesign.', 'Led sprint planning and client meetings for a six-person engineering and design team.'] },
   { role: 'Tobin Undergraduate Research Assistant', dates: 'Sep 2025 — Jan 2026', company: 'Livable City Lab', location: 'New Haven, CT', details: ['Fine-tuned a YOLO computer-vision model to recognize objects in geospatial video data.', 'Engineered Python pipelines for frame extraction, classification, geo-projection, model validation, and trajectory computation.'] },
@@ -372,11 +380,11 @@ function HubGraph() {
   }
 
   if (state === 'error') return null
-  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between all the music, books, movies, and experiences I have been consuming! This is a knowledge graph that uses a mini Sentence transformer to embed all my content and connects to the closely related vectors.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
+  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between the music, books, movies, and experiences I've been consuming. This is a knowledge graph that uses a mini sentence transformer to embed all my content and connect it to closely related vectors — inspired by Obsidian's graph view.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
 }
 
-function MediaGrid({ nodes, limit, showLibraryLink = false }: { nodes: PortfolioNode[]; limit?: number; showLibraryLink?: boolean }) {
-  const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>('all')
+function MediaGrid({ nodes, limit, showLibraryLink = false, showControls = true, initialFilter = 'all' }: { nodes: PortfolioNode[]; limit?: number; showLibraryLink?: boolean; showControls?: boolean; initialFilter?: 'all' | 'book' | 'film' | 'music' | 'reflection' }) {
+  const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>(initialFilter)
   const [sort, setSort] = useState<'date' | 'name'>('date')
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
@@ -385,26 +393,46 @@ function MediaGrid({ nodes, limit, showLibraryLink = false }: { nodes: Portfolio
     .filter((node) => filter === 'all' || node.type === filter)
     .sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
   const visibleMedia = useMemo(() => limit ? media.slice(0, limit) : media, [limit, media])
+  const bookshelfRows = useMemo(() => Array.from({ length: Math.ceil(visibleMedia.length / 5) }, (_, index) => visibleMedia.slice(index * 5, index * 5 + 5)), [visibleMedia])
 
   useEffect(() => {
     const paths = [...new Set(visibleMedia.map((node) => node.cover_image_path).filter((path): path is string => Boolean(path)))]
     void getSignedImageUrls(paths).then(setUrls).catch(() => setUrls({}))
   }, [visibleMedia])
 
+  function mediaTile(node: PortfolioNode, className = 'media-tile') {
+    const imagePath = node.cover_image_path!
+    const imageUrl = urls[imagePath]
+    const isLoaded = loadedImages.has(imagePath)
+    return <a className={className} key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}>
+      <div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} loading="lazy" decoding="async" onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div>
+      <span className="media-title">{node.title}</span>
+    </a>
+  }
+
   return <section className="media-grid-section" aria-labelledby="media-grid-heading" data-reveal>
     <div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">My library.</h2></div>
-    <div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div>
-    {visibleMedia.length ? <div className="media-grid">{visibleMedia.map((node) => {
-      const imagePath = node.cover_image_path!
-      const imageUrl = urls[imagePath]
-      const isLoaded = loadedImages.has(imagePath)
-      return <a className="media-tile" key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}>
-        <div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} loading="lazy" decoding="async" onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div>
-        <span className="media-title">{node.title}</span>
-      </a>
-    })}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}
+    {showControls ? <div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div> : null}
+    {visibleMedia.length ? filter === 'book' ? <div className="bookshelf" aria-label="Bookshelf">{bookshelfRows.map((row, rowIndex) => <div className="bookshelf-row" key={`shelf-${rowIndex}`}>{row.map((node) => mediaTile(node, 'media-tile bookshelf-book'))}</div>)}</div> : filter === 'film' ? <div className="media-grid film-grid">{visibleMedia.map((node) => mediaTile(node, 'media-tile film-tile'))}</div> : filter === 'reflection' ? <JournalGlobeErrorBoundary><Suspense fallback={<JournalGlobeFoundation />}><JournalGlobe entries={visibleMedia} imageUrls={urls} /></Suspense></JournalGlobeErrorBoundary> : <div className={filter === 'music' ? 'media-grid music-grid' : 'media-grid'}>{visibleMedia.map((node) => mediaTile(node, filter === 'music' ? 'media-tile music-tile' : 'media-tile'))}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}
     {showLibraryLink ? <a className="media-library-link" href="/library">View all media <span aria-hidden="true">→</span></a> : null}
   </section>
+}
+
+function JournalGlobeFoundation() {
+  return <section className="journal-globe-foundation" aria-label="Loading Journal globe"><div><p className="eyebrow">Places</p><h3>Journal globe</h3><p>Loading your Journal places…</p></div><span aria-hidden="true">✦</span></section>
+}
+
+class JournalGlobeErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error.message : 'The Journal globe could not load.' }
+  }
+
+  render() {
+    if (this.state.error) return <section className="journal-globe-empty" role="alert"><p className="eyebrow">Places</p><h3>Journal globe unavailable</h3><p>{this.state.error}</p></section>
+    return this.props.children
+  }
 }
 
 function NodePage({ node }: { node: PortfolioNode | null }) {
@@ -525,7 +553,7 @@ function NodeEditor({ node, ownerId, nodes, links, linksError, onChanged }: { no
   const [newGalleryAltText, setNewGalleryAltText] = useState('')
 
   useEffect(() => {
-    setForm(node ? { type: node.type, slug: node.slug, title: node.title, summary: node.summary, markdown_content: node.markdown_content, project_url: node.project_url ?? '', creator: node.creator ?? '', source_name: node.source_name ?? '', source_url: node.source_url ?? '', status: node.status } : emptyNode)
+    setForm(node ? { type: node.type, slug: node.slug, title: node.title, summary: node.summary, markdown_content: node.markdown_content, project_url: node.project_url ?? '', creator: node.creator ?? '', source_name: node.source_name ?? '', source_url: node.source_url ?? '', location_name: node.location_name ?? '', status: node.status } : emptyNode)
     setError('')
     setNewCoverFile(null)
     setNewGalleryFiles([])
@@ -544,7 +572,7 @@ function NodeEditor({ node, ownerId, nodes, links, linksError, onChanged }: { no
     setError('')
     setIsSaving(true)
     try {
-      const clean = { ...form, slug: form.slug.trim(), title: form.title.trim(), summary: form.summary.trim(), markdown_content: form.markdown_content.trim(), project_url: form.project_url.trim(), creator: form.creator.trim(), source_name: form.source_name.trim(), source_url: form.source_url.trim() }
+      const clean = { ...form, slug: form.slug.trim(), title: form.title.trim(), summary: form.summary.trim(), markdown_content: form.markdown_content.trim(), project_url: form.project_url.trim(), creator: form.creator.trim(), source_name: form.source_name.trim(), source_url: form.source_url.trim(), location_name: form.location_name.trim() }
       if (node) {
         await updateNode(node.id, clean, node.published_at)
       } else {
@@ -572,7 +600,7 @@ function NodeEditor({ node, ownerId, nodes, links, linksError, onChanged }: { no
   const sourceNameLabel = form.type === 'article' ? 'Publication or site (optional)' : form.type === 'book' ? 'Publisher (optional)' : form.type === 'film' ? 'Studio, platform, or context (optional)' : 'Album, platform, or context (optional)'
   const sourceUrlLabel = form.type === 'article' ? 'Article URL (optional)' : form.type === 'book' ? 'Book URL (optional)' : form.type === 'film' ? 'Film URL (optional)' : 'Listening URL (optional)'
 
-  return <section className="editor-panel" aria-labelledby="editor-heading"><p className="eyebrow">{node ? `Edit ${nodeTypeLabel(node.type).toLowerCase()}` : 'New portfolio item'}</p><h2 id="editor-heading">{node ? node.title : 'Start a new piece'}</h2><form className="reflection-form" onSubmit={handleSubmit}><label>Content type<select value={form.type} onChange={(event) => updateField('type', event.target.value as NodeType)} disabled={Boolean(node)}><option value="reflection">Journal</option><option value="project">Project</option><option value="article">Article</option><option value="book">Book</option><option value="music">Music</option><option value="film">Film</option></select></label><label>Title<input value={form.title} onChange={(event) => updateField('title', event.target.value)} maxLength={160} required /></label><label>Short summary<input value={form.summary} onChange={(event) => updateField('summary', event.target.value)} maxLength={320} required /></label><label>Public URL slug<input value={form.slug} onChange={(event) => updateField('slug', event.target.value)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" title="Use lowercase words separated by hyphens." required /></label>{form.type === 'project' ? <label>Project URL (optional)<input type="url" value={form.project_url} onChange={(event) => updateField('project_url', event.target.value)} placeholder="https://…" /></label> : null}{externalType ? <><label>{creatorLabel}<input value={form.creator} onChange={(event) => updateField('creator', event.target.value)} /></label><label>{sourceNameLabel}<input value={form.source_name} onChange={(event) => updateField('source_name', event.target.value)} /></label><label>{sourceUrlLabel}<input type="url" value={form.source_url} onChange={(event) => updateField('source_url', event.target.value)} placeholder="https://…" /></label></> : null}<label>{form.type === 'project' ? 'Project write-up' : externalType ? 'Your reflection on this source' : 'Your Journal entry'}<textarea rows={11} value={form.markdown_content} onChange={(event) => updateField('markdown_content', event.target.value)} required /></label>{!node ? <fieldset className="new-item-media"><legend>Images (optional)</legend><p className="muted-copy">Choose files now; they upload automatically after the item is created. JPEG, PNG, or WebP, up to 5 MB each.</p><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewCoverFile(event.target.files?.[0] ?? null)} /></label>{form.type === 'reflection' ? <><label>Journal photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewGalleryFiles(Array.from(event.target.files ?? []))} /></label>{newGalleryFiles.length ? <label>Photo descriptions — one per line, in file order<textarea rows={4} value={newGalleryAltText} onChange={(event) => setNewGalleryAltText(event.target.value)} placeholder={'First photo description\nSecond photo description'} required /></label> : null}</> : null}</fieldset> : null}<fieldset><legend>Visibility</legend><label className="radio-label"><input type="radio" checked={form.status === 'draft'} onChange={() => setForm((current) => ({ ...current, status: 'draft' as NodeStatus }))} /> Save as draft</label><label className="radio-label"><input type="radio" checked={form.status === 'published'} onChange={() => setForm((current) => ({ ...current, status: 'published' as NodeStatus }))} /> Publish publicly</label></fieldset>{error ? <p className="form-error" role="alert">{error}</p> : null}<div className="editor-actions"><button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : node ? 'Save changes' : 'Create item'}</button>{node ? <button className="danger-button" type="button" onClick={() => void handleDelete()}>Delete</button> : null}</div></form>{node ? <MediaManager node={node} ownerId={ownerId} /> : null}{node ? <SemanticPanel node={node} onChanged={onChanged} /> : null}{node ? <ConnectionsEditor node={node} nodes={nodes} links={links} linksError={linksError} onChanged={onChanged} /> : null}</section>
+  return <section className="editor-panel" aria-labelledby="editor-heading"><p className="eyebrow">{node ? `Edit ${nodeTypeLabel(node.type).toLowerCase()}` : 'New portfolio item'}</p><h2 id="editor-heading">{node ? node.title : 'Start a new piece'}</h2><form className="reflection-form" onSubmit={handleSubmit}><label>Content type<select value={form.type} onChange={(event) => updateField('type', event.target.value as NodeType)} disabled={Boolean(node)}><option value="reflection">Journal</option><option value="project">Project</option><option value="article">Article</option><option value="book">Book</option><option value="music">Music</option><option value="film">Film</option></select></label><label>Title<input value={form.title} onChange={(event) => updateField('title', event.target.value)} maxLength={160} required /></label><label>Short summary<input value={form.summary} onChange={(event) => updateField('summary', event.target.value)} maxLength={320} required /></label><label>Public URL slug<input value={form.slug} onChange={(event) => updateField('slug', event.target.value)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" title="Use lowercase words separated by hyphens." required /></label>{form.type === 'reflection' ? <label>Place (optional)<input value={form.location_name} onChange={(event) => updateField('location_name', event.target.value)} maxLength={160} placeholder="Kyoto, Japan" /><small>Use the exact place name that will be added to the Journal globe’s local location list.</small></label> : null}{form.type === 'project' ? <label>Project URL (optional)<input type="url" value={form.project_url} onChange={(event) => updateField('project_url', event.target.value)} placeholder="https://…" /></label> : null}{externalType ? <><label>{creatorLabel}<input value={form.creator} onChange={(event) => updateField('creator', event.target.value)} /></label><label>{sourceNameLabel}<input value={form.source_name} onChange={(event) => updateField('source_name', event.target.value)} /></label><label>{sourceUrlLabel}<input type="url" value={form.source_url} onChange={(event) => updateField('source_url', event.target.value)} placeholder="https://…" /></label></> : null}<label>{form.type === 'project' ? 'Project write-up' : externalType ? 'Your reflection on this source' : 'Your Journal entry'}<textarea rows={11} value={form.markdown_content} onChange={(event) => updateField('markdown_content', event.target.value)} required /></label>{!node ? <fieldset className="new-item-media"><legend>Images (optional)</legend><p className="muted-copy">Choose files now; they upload automatically after the item is created. JPEG, PNG, or WebP, up to 5 MB each.</p><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewCoverFile(event.target.files?.[0] ?? null)} /></label>{form.type === 'reflection' ? <><label>Journal photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => setNewGalleryFiles(Array.from(event.target.files ?? []))} /></label>{newGalleryFiles.length ? <label>Photo descriptions — one per line, in file order<textarea rows={4} value={newGalleryAltText} onChange={(event) => setNewGalleryAltText(event.target.value)} placeholder={'First photo description\nSecond photo description'} required /></label> : null}</> : null}</fieldset> : null}<fieldset><legend>Visibility</legend><label className="radio-label"><input type="radio" checked={form.status === 'draft'} onChange={() => setForm((current) => ({ ...current, status: 'draft' as NodeStatus }))} /> Save as draft</label><label className="radio-label"><input type="radio" checked={form.status === 'published'} onChange={() => setForm((current) => ({ ...current, status: 'published' as NodeStatus }))} /> Publish publicly</label></fieldset>{error ? <p className="form-error" role="alert">{error}</p> : null}<div className="editor-actions"><button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : node ? 'Save changes' : 'Create item'}</button>{node ? <button className="danger-button" type="button" onClick={() => void handleDelete()}>Delete</button> : null}</div></form>{node ? <MediaManager node={node} ownerId={ownerId} /> : null}{node ? <SemanticPanel node={node} onChanged={onChanged} /> : null}{node ? <ConnectionsEditor node={node} nodes={nodes} links={links} linksError={linksError} onChanged={onChanged} /> : null}</section>
 }
 
 function MediaManager({ node, ownerId }: { node: OwnerNode; ownerId: string }) {
