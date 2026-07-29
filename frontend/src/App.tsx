@@ -49,7 +49,7 @@ function useScrollReveal<T extends HTMLElement>() {
   useEffect(() => {
     const container = ref.current
     if (!container || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const elements = [...container.querySelectorAll<HTMLElement>('[data-reveal]')]
+    const elements = Array.from(container.querySelectorAll<HTMLElement>('[data-reveal]'))
     const observer = new IntersectionObserver(
       (entries) => entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -275,7 +275,7 @@ function HomePage({ nodes }: { nodes: PortfolioNode[] }) {
       </header>
       <AboutSection />
       <HubGraph />
-      <MediaGrid nodes={nodes} showLibraryLink showControls={false} />
+      <MediaGrid nodes={nodes} limit={10} showLibraryLink showControls={false} />
       <footer className="hub-footer" data-reveal><span>© {new Date().getFullYear()} Mandy Zhang</span><a href="mailto:mandy.zhang@yale.edu">Get in touch</a></footer>
     </main>
   )
@@ -287,8 +287,12 @@ function LibraryPage({ nodes, initialFilter = 'all' }: { nodes: PortfolioNode[];
 }
 
 function AboutSection() {
-  return <section className="about-section" aria-labelledby="about-heading" data-reveal><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." width="1400" height="933" fetchPriority="high" decoding="async" /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy"><p>I’m a Computer Science student at Yale, interested in tech, social good, and solving real problems.</p><p>Right now, I work on AI/ML infrastructure at The Options Clearing Corporation — building data pipelines, testing AI agents, and helping make Claude-powered tools more useful across the organization. I’ve also spent time in research and social impact work: evaluating AI models for legal document processing at the Vera Institute, training computer vision models to study urban environments at Yale’s Livable City Lab, and managing a nonprofit product team with Develop for Good.</p><p>I work mainly in Python, PyTorch, TensorFlow, and scikit-learn, and I like being able to move between research and production.</p><p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you’re working in AI, engineering, or social impact.</p></div></section>
-}
+  return <section className="about-section" aria-labelledby="about-heading" data-reveal><div className="about-photo"><img src={headshot} alt="Mandy Zhang standing outdoors beneath flowering trees." width="1400" height="933" fetchPriority="high" decoding="async" /><h1 id="about-heading">Hi, I’m Mandy.</h1></div><div className="about-copy">
+  <p>I'm a soon-to-be Computer Science graduate at Yale, drawn to the places where liberal arts thinking meets data and technology.</p>
+  <p>These days, I work on AI/ML infrastructure at the Options Clearing Corporation. Before that, I evaluated AI models for legal document processing at the Vera Institute, trained computer vision models to study urban environments at Yale's Livable City Lab, and led a nonprofit product team with Develop for Good.</p>
+  <p>I like using data and engineering to answer tough questions.</p>
+  <p>Take a look at <a href="/cv">my resume</a>, or feel free to <a href="mailto:mandy.zhang@yale.edu">email me</a> if you're working in AI, engineering, or social impact. This site is where I share both my personal thoughts and experiences, and my professional work and passions.</p> </div></section>
+  }
 
 type CvExperience = {
   role: string
@@ -299,24 +303,103 @@ type CvExperience = {
 }
 
 const cvExperiences: CvExperience[] = [
-  { role: 'AI Engineer', dates: 'Jun 2026 — Present', company: 'Options Clearing Corporation', location: 'Chicago, IL', details: ['Architecting a medallion data pipeline for AI-adoption metrics across 1,300+ employees.', 'Building a Claude Agent SDK evaluation framework for Tier-1 SOC alert triage, balancing accuracy, cost, and speed.'] },
-  { role: 'Data Scientist', dates: 'Oct 2025 — Apr 2026', company: 'Vera Institute', location: 'New York City, NY', details: ['Evaluated Azure OpenAI and Document Intelligence approaches for extracting structured data from legal documents.', 'Built Azure Blob Storage ingestion and extraction workflows in Python, with implementation guides for the team.'] },
-  { role: 'Product Manager — nenos Inc.', dates: 'Oct 2025 — Mar 2026', company: 'Develop for Good', location: 'Remote', details: ['Wrote the product requirements document and maintained a milestone roadmap for a five-month website redesign.', 'Led sprint planning and client meetings for a six-person engineering and design team.'] },
-  { role: 'Tobin Undergraduate Research Assistant', dates: 'Sep 2025 — Jan 2026', company: 'Livable City Lab', location: 'New Haven, CT', details: ['Fine-tuned a YOLO computer-vision model to recognize objects in geospatial video data.', 'Engineered Python pipelines for frame extraction, classification, geo-projection, model validation, and trajectory computation.'] },
-  { role: 'Data Science Intern', dates: 'May 2025 — Aug 2025', company: 'Steelcase', location: 'Grand Rapids, MI', details: ['Built a PySpark and scikit-learn K-means model that surfaced product lines for standardization, with an estimated $10–15M annual savings opportunity.', 'Created sentence-transformer embeddings, analyzed purchasing patterns, and delivered Tableau dashboards for decision-makers.'] },
-  { role: 'ONEXYS Supercoach', dates: 'May 2023 — Aug 2025', company: 'Yale University', location: 'Remote · Seasonal', details: ['Led a 53-member coaching team supporting 150+ incoming students.', 'Facilitated weekly strategy meetings and quantitative-skills instruction to strengthen academic performance.'] },
-]
+  {
+    role: 'AI Engineer',
+    dates: 'Jun 2026 — Present',
+    company: 'Options Clearing Corporation',
+    location: 'Chicago, IL',
+    details: [
+      'Architect and maintain an ETL pipeline tracking AI-adoption metrics across 1,300+ employees using the Anthropic API.',
+      'Build a Claude Agent SDK evaluation framework for Tier-1 SOC alert triage, balancing accuracy, cost, and speed.',
+      'Configure OpenTelemetry span logging to trace and debug agent behavior.',
+    ],
+  },
+  {
+    role: 'Data Scientist',
+    dates: 'Oct 2025 — Apr 2026',
+    company: 'Vera Institute',
+    location: 'New York City, NY',
+    details: [
+      'Evaluated Azure OpenAI and Document Intelligence approaches for extracting structured data from legal documents, comparing OCR, custom models, and LLM-based pipelines.',
+      'Built Azure Blob Storage ingestion pipelines in Python to automate document extraction at scale.',
+      'Authored implementation guides enabling team-wide adoption of the Azure AI infrastructure.',
+      'Advised on exploratory analysis of a national incarceration trends database.',
+    ],
+  },
+  {
+    role: 'Product Manager — nenos Inc.',
+    dates: 'Oct 2025 — Mar 2026',
+    company: 'Develop for Good',
+    location: 'Remote',
+    details: [
+      'Authored the PRD and managed the milestone roadmap for a five-month website redesign.',
+      'Led weekly sprint planning and client meetings for a six-person engineering and design team.',
+      'Delivered a case study presentation to industry stakeholders.',
+    ],
+  },
+  {
+    role: 'Tobin Undergraduate Research Assistant',
+    dates: 'Sep 2025 — Jan 2026',
+    company: 'Livable City Lab',
+    location: 'New Haven, CT',
+    details: [
+      'Fine-tuned a YOLO computer-vision model to detect objects in geospatial video data.',
+      'Built Python pipelines for frame extraction, classification, geo-projection, and trajectory computation, enabling end-to-end model validation.',
+    ],
+  },
+  {
+    role: 'Data Science Intern',
+    dates: 'May 2025 — Aug 2025',
+    company: 'Steelcase',
+    location: 'Grand Rapids, MI',
+    details: [
+      'Built and fine-tuned K-means clustering models in PySpark and scikit-learn to segment product data, identifying standardization opportunities worth an estimated $10–15M annually.',
+      'Generated sentence-transformer embeddings to analyze purchasing patterns and product cannibalization, surfacing consumer behavior insights.',
+      'Aligned analytical goals with cross-functional teams (marketing, ops, engineering) to keep deliverables tied to business priorities.',
+      'Deployed interactive Tableau dashboards to drive executive-level decision-making.',
+    ],
+  },
+  {
+    role: 'Machine Learning Researcher',
+    dates: 'Jun 2024 — May 2025',
+    company: 'Google DeepMind',
+    location: 'New York City, NY',
+    details: [
+      "Developed a Fourier Transform–based image classifier (TensorFlow, NumPy) for partial MRI images to support medical diagnostics, under Prof. Sumit Chopra's lab at NYU.",
+    ],
+  },
+  {
+    role: 'Student Tech Collaborative Technician',
+    dates: 'Oct 2023 — Aug 2025',
+    company: 'Yale University',
+    location: 'New Haven, CT',
+    details: [
+      'Manage student technology requests and digital workflows via ServiceNow, supporting all Yale undergraduates and select graduate schools.',
+      'Perform hardware repairs and software troubleshooting, including data backup, recovery, and device restoration.',
+    ],
+  },
+  {
+    role: 'ONEXYS Supercoach',
+    dates: 'May 2023 — Aug 2025',
+    company: 'Yale University',
+    location: 'Remote · Seasonal',
+    details: [
+      'Led a 53-member coaching team supporting 150+ incoming students.',
+      'Facilitated weekly strategy meetings and quantitative-skills instruction to strengthen academic performance.',
+      'Provided 1-on-1 mentorship on academic scheduling, financial aid, and major selection.',
+    ],
+  },
+];
 
 const cvSkills = [
-  ['Languages', 'Python', 'JavaScript / TypeScript', 'SQL', 'C', 'R', 'HTML / CSS', 'Racket', 'PySpark'],
-  ['ML & data', 'Pandas', 'NumPy', 'scikit-learn', 'TensorFlow', 'PyTorch', 'Roboflow', 'OpenCV', 'NLTK'],
-  ['Frameworks', 'React', 'Flask', 'Node.js', 'Express.js'],
-  ['Data & cloud', 'Databricks', 'Microsoft AI Foundry', 'Azure', 'BigQuery', 'MongoDB'],
-  ['Tools', 'Git', 'SQLAlchemy', 'Jupyter', 'Tableau', 'VS Code'],
+  ['Languages', 'Python', 'R', 'SQL', 'HTML / CSS', 'PySpark'],
+  ['Frameworks & libraries', 'React.js', 'Flask', 'Pandas', 'NumPy', 'scikit-learn', 'TensorFlow', 'PyTorch', 'Tableau', 'Roboflow', 'OpenCV', 'NLTK'],
+  ['Infrastructure & tools', 'Git', 'Databricks', 'SQLAlchemy', 'Jupyter', 'Node.js', 'Express.js', 'VS Code', 'MongoDB', 'Microsoft Suite', 'AWS'],
+  ['Methodologies', 'Machine Learning', 'Deep Learning', 'Data Modeling and Visualization', 'Agile', 'Full-stack Development'],
 ]
 
 function CvPage() {
-  return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a className="is-active" href="/cv" aria-current="page">Resume</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building useful things with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p><a className="cv-download" href="/MandyZhang_Resume.pdf" download>Download Resume</a></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · GPA 3.74 / 4.00</p><p>Coursework includes algorithms, artificial intelligence, machine learning, full-stack web development, systems programming, security, and human-computer interaction.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
+  return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a className="is-active" href="/cv" aria-current="page">Resume</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p><a className="cv-download" href="/MandyZhang_Resume.pdf" download>Download Resume</a></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · Cumulative GPA 3.74 / 4.00</p><p>Relevant coursework: Data Structures and Programming Techniques, Mathematical Tools for Computer Science, Human-Computer Interaction, Systems Programming, Algorithms, Software Engineering, Artificial Intelligence, Machine Learning, Full Stack Web Programming, Linear Algebra, Data Exploration and Analysis, and Computer System Security.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
 }
 
 
@@ -380,16 +463,18 @@ function HubGraph() {
   }
 
   if (state === 'error') return null
-  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between the music, books, movies, and experiences I've been consuming. This is a knowledge graph that uses a mini sentence transformer to embed all my content and connect it to closely related vectors — inspired by Obsidian's graph view.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
+  return <section className="hub-graph" id="knowledge-graph" aria-labelledby="hub-graph-heading" data-reveal><div className="hub-section-heading"><h1 id="hub-graph-heading">My Connections.</h1><p>Follow the threads between the music, books, movies, and experiences I've been taking in. This is a knowledge graph that uses a mini sentence-transformer to embed my content and connect it to related vectors — inspired by Obsidian's graph view.</p></div><div className="hub-graph-workspace"><div className="hub-graph-canvas" ref={graphRef}>{state === 'loading' ? <p>Mapping connections…</p> : <ForceGraph2D<GraphNode, GraphLink> ref={forceGraphRef} width={size.width} height={size.height} graphData={graphData} backgroundColor="#183c3d" nodeRelSize={5} nodeCanvasObjectMode={() => 'replace'} nodeCanvasObject={(node, context, scale) => { const active = node.id === activeNodeId; const connected = !activeNodeId || connectedIds.has(node.id); const radius = active ? 8 : 5; context.globalAlpha = connected ? 1 : .22; context.beginPath(); context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI); context.fillStyle = graphTypeColors[node.type]; context.fill(); if (active) { context.strokeStyle = '#f6eee5'; context.lineWidth = 2 / scale; context.stroke() } if (scale > .9) { context.font = `${Math.max(10 / scale, 3)}px Impact, Haettenschweiler, Arial`; context.textAlign = 'center'; context.textBaseline = 'top'; context.fillStyle = '#f6eee5'; context.fillText(node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title, node.x ?? 0, (node.y ?? 0) + radius + 4 / scale) } context.globalAlpha = 1 }} linkColor={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? '#e8a317' : link.id === hoveredLinkId ? '#f6eee5' : 'rgba(246,238,229,.32)'} linkWidth={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 1.8 : link.id === hoveredLinkId ? 1.4 : .8} linkDirectionalParticles={(link) => activeNodeId && (graphEndpointId(link.source) === activeNodeId || graphEndpointId(link.target) === activeNodeId) ? 2 : 0} linkDirectionalParticleWidth={1.4} linkDirectionalParticleSpeed={.004} linkLabel={(link) => relationshipLabel(link.relationship_type)} onNodeClick={(node) => setSelectedId(node.id)} onNodeHover={(node) => setHoveredNodeId(node?.id ?? null)} onLinkHover={(link) => setHoveredLinkId(link?.id ?? null)} onBackgroundClick={() => setSelectedId(null)} cooldownTicks={100} />}</div><aside className="hub-graph-sidebar"><label htmlFor="hub-graph-filter">Filter graph</label><input id="hub-graph-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles…" /><div><p>Node types</p>{(['reflection', 'project', 'article', 'book', 'music', 'film'] as NodeType[]).map((type) => <button type="button" className={activeTypes.has(type) ? 'is-active' : ''} key={type} onClick={() => toggleType(type)}><i style={{ background: activeTypes.has(type) ? graphTypeColors[type] : '#776052' }} /><span>{nodeTypeLabel(type)}</span><small>{nodes.filter((node) => node.type === type).length}</small></button>)}</div><div className="hub-graph-stats"><p>Graph</p><span>Nodes <strong>{visibleNodes.length}</strong></span><span>Connections <strong>{visibleLinks.length}</strong></span></div><button className="hub-graph-reset" type="button" onClick={resetGraphView}>Reset view</button></aside></div>{selected ? <a className="hub-graph-selected" href={publicPath(selected)}><span>{nodeTypeLabel(selected.type)}</span><strong>{selected.title}</strong><small>{selected.summary}</small><em>{Math.max(0, connectedIds.size - 1)} connections →</em></a> : <div className="hub-graph-footer"><span>Select a point to read it. Drag to pan and scroll to zoom.</span></div>}</section>
 }
 
-function MediaGrid({ nodes, limit, showLibraryLink = false, showControls = true, initialFilter = 'all' }: { nodes: PortfolioNode[]; limit?: number; showLibraryLink?: boolean; showControls?: boolean; initialFilter?: 'all' | 'book' | 'film' | 'music' | 'reflection' }) {
-  const [filter, setFilter] = useState<'all' | 'book' | 'film' | 'music' | 'reflection'>(initialFilter)
+type MediaFilter = 'all' | 'article' | 'book' | 'film' | 'music' | 'reflection'
+
+function MediaGrid({ nodes, limit, showLibraryLink = false, showControls = true, initialFilter = 'all' }: { nodes: PortfolioNode[]; limit?: number; showLibraryLink?: boolean; showControls?: boolean; initialFilter?: MediaFilter }) {
+  const [filter, setFilter] = useState<MediaFilter>(initialFilter)
   const [sort, setSort] = useState<'date' | 'name'>('date')
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
   const media = useMemo(() => nodes
-    .filter((node) => node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type))
+    .filter((node) => node.type === 'article' || (node.cover_image_path && ['book', 'film', 'music', 'reflection'].includes(node.type)))
     .filter((node) => filter === 'all' || node.type === filter)
     .sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.published_at ?? '').localeCompare(a.published_at ?? '')), [filter, nodes, sort])
   const visibleMedia = useMemo(() => limit ? media.slice(0, limit) : media, [limit, media])
@@ -401,19 +486,23 @@ function MediaGrid({ nodes, limit, showLibraryLink = false, showControls = true,
   }, [visibleMedia])
 
   function mediaTile(node: PortfolioNode, className = 'media-tile') {
-    const imagePath = node.cover_image_path!
-    const imageUrl = urls[imagePath]
-    const isLoaded = loadedImages.has(imagePath)
+    const imagePath = node.cover_image_path
+    const imageUrl = imagePath ? urls[imagePath] : undefined
+    const isLoaded = imagePath ? loadedImages.has(imagePath) : true
     return <a className={className} key={node.id} href={publicPath(node)} aria-label={`${nodeTypeLabel(node.type)}: ${node.title}`}>
-      <div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl ? <img src={imageUrl} alt={`Cover for ${node.title}`} loading="lazy" decoding="async" onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.title}</span>}</div>
+      <div className={isLoaded ? 'media-thumbnail is-loaded' : 'media-thumbnail'}>{imageUrl && imagePath ? <img src={imageUrl} alt={`Cover for ${node.title}`} loading="lazy" decoding="async" onLoad={() => setLoadedImages((current) => new Set(current).add(imagePath))} /> : <span>{node.type === 'article' ? node.summary : node.title}</span>}</div>
       <span className="media-title">{node.title}</span>
     </a>
   }
 
+  function articleTile(node: PortfolioNode) {
+    return <a className="article-tile" key={node.id} href={publicPath(node)}><p>{node.source_name ?? 'Article'}</p><h3>{node.title}</h3><span>{node.summary}</span><em>Read article <b aria-hidden="true">→</b></em></a>
+  }
+
   return <section className="media-grid-section" aria-labelledby="media-grid-heading" data-reveal>
     <div className="hub-section-heading"><p className="eyebrow">Media</p><h2 id="media-grid-heading">My library.</h2></div>
-    {showControls ? <div className="media-controls"><span>Show</span>{(['all', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div> : null}
-    {visibleMedia.length ? filter === 'book' ? <div className="bookshelf" aria-label="Bookshelf">{bookshelfRows.map((row, rowIndex) => <div className="bookshelf-row" key={`shelf-${rowIndex}`}>{row.map((node) => mediaTile(node, 'media-tile bookshelf-book'))}</div>)}</div> : filter === 'film' ? <div className="media-grid film-grid">{visibleMedia.map((node) => mediaTile(node, 'media-tile film-tile'))}</div> : filter === 'reflection' ? <JournalGlobeErrorBoundary><Suspense fallback={<JournalGlobeFoundation />}><JournalGlobe entries={visibleMedia} imageUrls={urls} /></Suspense></JournalGlobeErrorBoundary> : <div className={filter === 'music' ? 'media-grid music-grid' : 'media-grid'}>{visibleMedia.map((node) => mediaTile(node, filter === 'music' ? 'media-tile music-tile' : 'media-tile'))}</div> : <p className="muted-copy">Add a cover image to a published Book, Film, Music, or Journal entry to place it here.</p>}
+    {showControls ? <div className="media-controls"><span>Show</span>{(['all', 'article', 'book', 'film', 'music', 'reflection'] as const).map((type) => <button key={type} className={filter === type ? 'is-active' : ''} type="button" onClick={() => setFilter(type)}>{type === 'all' ? 'All' : type === 'reflection' ? 'Journal' : nodeTypeLabel(type)}</button>)}<span>Sort</span><button className={sort === 'date' ? 'is-active' : ''} type="button" onClick={() => setSort('date')}>Date</button><button className={sort === 'name' ? 'is-active' : ''} type="button" onClick={() => setSort('name')}>Name</button></div> : null}
+    {visibleMedia.length ? filter === 'article' ? <section className="article-section" aria-label="Articles"><p className="eyebrow">Reading list</p><div className="article-grid">{visibleMedia.map(articleTile)}</div></section> : filter === 'book' ? <div className="bookshelf" aria-label="Bookshelf">{bookshelfRows.map((row, rowIndex) => <div className="bookshelf-row" key={`shelf-${rowIndex}`}>{row.map((node) => mediaTile(node, 'media-tile bookshelf-book'))}</div>)}</div> : filter === 'film' ? <div className="media-grid film-grid">{visibleMedia.map((node) => mediaTile(node, 'media-tile film-tile'))}</div> : filter === 'reflection' ? <JournalGlobeErrorBoundary><Suspense fallback={<JournalGlobeFoundation />}><JournalGlobe entries={visibleMedia} imageUrls={urls} /></Suspense></JournalGlobeErrorBoundary> : <div className={filter === 'music' ? 'media-grid music-grid' : 'media-grid'}>{visibleMedia.map((node) => mediaTile(node, filter === 'music' ? 'media-tile music-tile' : 'media-tile'))}</div> : <p className="muted-copy">Add a published Article, Book, Film, Music, or Journal entry to place it here.</p>}
     {showLibraryLink ? <a className="media-library-link" href="/library">View all media <span aria-hidden="true">→</span></a> : null}
   </section>
 }
@@ -481,8 +570,17 @@ function NodePage({ node }: { node: PortfolioNode | null }) {
   if (!node) return <main><StatusScreen title="Content not found" message="It may still be a draft, or the link may be out of date." detail={<a href="/">Return to the homepage</a>} /></main>
 
   return (
-    <main>
-      <SiteHeader />
+    <main className="node-page">
+      <header className="hub-header node-header">
+        <a className="hub-name" href="/">Mandy Zhang</a>
+        <nav aria-label="Personal links">
+          <a href="/">Home</a>
+          <a href="/cv">Resume</a>
+          <a href="/library">Library</a>
+          <a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a>
+          <a href="mailto:mandy.zhang@yale.edu">Email</a>
+        </nav>
+      </header>
       <article className="reflection-page">
         <a className="back-link" href="/library">← Back to library</a>
         <p className="eyebrow">{nodeTypeLabel(node.type)} · {formatDate(node.published_at)}</p>

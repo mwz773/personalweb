@@ -119,7 +119,7 @@ export async function getPublishedNodes(): Promise<PortfolioNode[]> {
 
   const { data, error } = await supabase
     .from('nodes')
-    .select(publicNodeFields)
+    .select(publicNodeListFields)
     .eq('status', 'published')
     .in('type', ['reflection', 'project', 'article', 'book', 'music', 'film'])
     .order('published_at', { ascending: false })
@@ -340,16 +340,50 @@ export async function removePortfolioImage(storagePath: string): Promise<void> {
 export async function getSignedImageUrls(paths: string[]): Promise<Record<string, string>> {
   if (!supabase || !paths.length) return {}
 
+  const cacheKey = 'portfolio-signed-image-urls-v1'
+  const cacheLifetimeMs = 55 * 60 * 1000
+  const uniquePaths = [...new Set(paths)]
+  let cached: Record<string, { url: string; expiresAt: number }> = {}
+
+  try {
+    const stored = window.sessionStorage.getItem(cacheKey)
+    if (stored) cached = JSON.parse(stored) as Record<string, { url: string; expiresAt: number }>
+  } catch {
+    cached = {}
+  }
+
+  const now = Date.now()
+  const validCached = Object.fromEntries(
+    Object.entries(cached)
+      .filter(([, entry]) => entry.expiresAt > now)
+      .map(([path, entry]) => [path, entry.url]),
+  )
+  const missingPaths = uniquePaths.filter((path) => !validCached[path])
+
+  if (!missingPaths.length) return Object.fromEntries(uniquePaths.map((path) => [path, validCached[path]]))
+
   const { data, error } = await supabase.storage
     .from('portfolio-media')
-    .createSignedUrls(paths, 60 * 60)
+    .createSignedUrls(missingPaths, 60 * 60)
   if (error) throw error
 
-  return Object.fromEntries(
+  const freshUrls = Object.fromEntries(
     (data ?? [])
       .filter((item) => item.signedUrl)
       .map((item) => [item.path, item.signedUrl]),
   )
+  const refreshedCache = {
+    ...cached,
+    ...Object.fromEntries(Object.entries(freshUrls).map(([path, url]) => [path, { url, expiresAt: now + cacheLifetimeMs }])),
+  }
+
+  try {
+    window.sessionStorage.setItem(cacheKey, JSON.stringify(refreshedCache))
+  } catch {
+    // Signed URLs still work when browser storage is unavailable.
+  }
+
+  return Object.fromEntries(uniquePaths.map((path) => [path, validCached[path] ?? freshUrls[path]]).filter(([, url]) => Boolean(url)))
 }
 
 export async function getOwnerLinks(): Promise<NodeLink[]> {
@@ -435,7 +469,7 @@ export async function getPublicGraph(): Promise<PublicGraph> {
   const [nodesResult, manualLinksResult, semanticEdgesResult] = await Promise.all([
     supabase
       .from('nodes')
-      .select(publicNodeFields)
+      .select(publicNodeListFields)
       .eq('status', 'published')
       .in('type', ['reflection', 'project', 'article', 'book', 'music', 'film'])
       .order('published_at', { ascending: false }),

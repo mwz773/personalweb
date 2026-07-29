@@ -26,6 +26,14 @@ export const journalPlaces: Record<string, JournalPlace> = {
     lat: 43.1939,
     lng: -71.5724,
   },
+  'Barcelona, Spain': {
+    lat: 41.3851,
+    lng: 2.1734,
+  },
+  'Madrid, Spain': {
+    lat: 40.4168,
+    lng: -3.7038,
+  },
 }
 export function findJournalPlace(locationName: string | null): JournalPlace | null {
   return locationName ? journalPlaces[locationName] ?? null : null

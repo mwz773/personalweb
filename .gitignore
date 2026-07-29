@@ -19,3 +19,11 @@
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Private source-data exports used for local imports
+letterboxd-*.zip
+
+# Local reference material and duplicate source files.
+/resume.pdf
+/frontend/src/lib/Screenshot*.png
+/docs/planning/inspiration_screenshots/
