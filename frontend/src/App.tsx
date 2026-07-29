@@ -4,6 +4,9 @@ import './App.css'
 import headshot from './assets/headshot.jpg'
 import { getSession, signIn, signOut, type Session } from './lib/auth'
 import { readableError } from './lib/errors'
+import { usePageMetadata } from './lib/metadata'
+import { SetupScreen, StatusScreen } from './components/Screens'
+import { useScrollReveal } from './hooks/useScrollReveal'
 import { embedNode, generateSuggestions, getSuggestionsForNode, isSemanticApiConfigured, reviewSuggestion, type SemanticSuggestion } from './lib/semantic'
 import {
   createNode,
@@ -43,31 +46,6 @@ const JournalGlobe = lazy(() => import('./components/JournalGlobe'))
 
 type LoadState = 'loading' | 'ready' | 'error'
 
-function useScrollReveal<T extends HTMLElement>() {
-  const ref = useRef<T>(null)
-
-  useEffect(() => {
-    const container = ref.current
-    if (!container || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const elements = Array.from(container.querySelectorAll<HTMLElement>('[data-reveal]'))
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-revealed')
-          observer.unobserve(entry.target)
-        }
-      }),
-      { threshold: .12 },
-    )
-    elements.forEach((element, index) => {
-      element.style.setProperty('--reveal-delay', `${Math.min(index * 55, 220)}ms`)
-      observer.observe(element)
-    })
-    return () => observer.disconnect()
-  }, [])
-
-  return ref
-}
 const emptyNode: NodeInput = {
   type: 'reflection',
   slug: '',
@@ -147,6 +125,16 @@ function PublicApp() {
   const isJournal = isJournalPath()
   const routeType = route?.type
   const routeSlug = route?.slug
+  usePageMetadata(
+    route ? node?.title : isJournal ? 'Journal' : isLibrary ? 'Library' : undefined,
+    route && node
+      ? node.summary
+      : isJournal
+        ? 'Travel notes, reflections, and photo journals from Mandy Zhang.'
+        : isLibrary
+          ? 'Books, films, music, articles, and journal entries from Mandy Zhang.'
+          : undefined,
+  )
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -192,6 +180,7 @@ const graphTypeColors: Record<NodeType, string> = {
 }
 
 function GraphPage() {
+  usePageMetadata('Knowledge Graph', 'Explore the connections between Mandy Zhang’s writing, media, and projects.')
   const [state, setState] = useState<LoadState>('loading')
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [links, setLinks] = useState<GraphLink[]>([])
@@ -399,6 +388,7 @@ const cvSkills = [
 ]
 
 function CvPage() {
+  usePageMetadata('Resume', 'Mandy Zhang’s résumé: AI, data science, machine learning, and software engineering experience.')
   return <main className="cv-page"><header className="cv-header"><a className="hub-name" href="/">Mandy Zhang</a><nav aria-label="CV navigation"><a href="/">Home</a><a className="is-active" href="/cv" aria-current="page">Resume</a><a href="mailto:mandy.zhang@yale.edu">Email</a><a href="https://linkedin.com/in/mandywzhang/" target="_blank" rel="noreferrer">LinkedIn</a></nav></header><section className="cv-intro"><p className="eyebrow">Resume</p><h1>Building with data and care.</h1><p>Computer Science at Yale · Expected December 2026</p><a className="cv-download" href="/MandyZhang_Resume.pdf" download>Download Resume</a></section><section className="cv-section" aria-labelledby="experience-heading"><div className="cv-section-heading"><p className="eyebrow">Experience</p><h2 id="experience-heading">Where I’ve worked.</h2></div><div className="cv-experience-list">{cvExperiences.map((experience) => <article className="cv-experience-card" key={`${experience.company}-${experience.role}`}><div className="cv-role"><h3>{experience.role}</h3><p>{experience.dates}</p></div><div className="cv-company"><h4>{experience.company}</h4><p className="cv-location">{experience.location}</p><ul>{experience.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div></article>)}</div></section><section className="cv-section cv-education" aria-labelledby="education-heading"><div className="cv-section-heading"><p className="eyebrow">Education</p><h2 id="education-heading">Learning.</h2></div><article className="cv-experience-card"><div className="cv-role"><h3>B.S. Computer Science</h3><p>Expected Dec 2026</p></div><div className="cv-company"><h4>Yale University</h4><p className="cv-location">New Haven, CT · Cumulative GPA 3.74 / 4.00</p><p>Relevant coursework: Data Structures and Programming Techniques, Mathematical Tools for Computer Science, Human-Computer Interaction, Systems Programming, Algorithms, Software Engineering, Artificial Intelligence, Machine Learning, Full Stack Web Programming, Linear Algebra, Data Exploration and Analysis, and Computer System Security.</p></div></article></section><section className="cv-section" aria-labelledby="skills-heading"><div className="cv-section-heading"><p className="eyebrow">Technical skills</p><h2 id="skills-heading">My toolkit.</h2></div><div className="cv-skills-grid">{cvSkills.map(([category, ...skills]) => <section className="cv-skill-group" key={category}><h3>{category}</h3><div>{skills.map((skill) => <span key={skill}>{skill}</span>)}</div></section>)}</div></section><footer className="cv-footer"><a href="/">← Back to home</a><a href="mailto:mandy.zhang@yale.edu">mandy.zhang@yale.edu</a></footer></main>
 }
 
@@ -894,8 +884,5 @@ function ConnectionsEditor({ node, nodes, links, linksError, onChanged }: { node
   async function removeLink(id: string) { try { await deleteNodeLink(id); await onChanged() } catch (linkError) { setError(readableError(linkError, 'Could not remove this connection.')) } }
   return <section className="connections-editor" aria-labelledby="connections-heading"><p className="eyebrow">Manual connections</p><h3 id="connections-heading">Connect this work</h3>{linksError ? <p className="muted-copy">{linksError}</p> : <><form className="connection-form" onSubmit={handleSubmit}><label>Relationship<select value={relationship} onChange={(event) => setRelationship(event.target.value as RelationshipType)}><option value="related_to">Related to</option><option value="inspired_by">Inspired by</option><option value="extends">Extends</option></select></label><label>Connect to<select value={targetId} onChange={(event) => setTargetId(event.target.value)} required><option value="">Choose published or draft work</option>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{nodeTypeLabel(candidate.type)} · {candidate.title}</option>)}</select></label><button className="quiet-button" type="submit" disabled={!targetId}>Add connection</button></form>{error ? <p className="form-error" role="alert">{error}</p> : null}<div className="connection-list">{nodeLinks.length ? nodeLinks.map((link) => { const target = byId.get(link.source_node_id === node.id ? link.target_node_id : link.source_node_id); return <div key={link.id}><span>{relationshipLabel(link.relationship_type)} · {target?.title ?? 'Unavailable content'}</span><button type="button" onClick={() => void removeLink(link.id)}>Remove</button></div> }) : <p className="muted-copy">No manual connections yet.</p>}</div></>}</section>
 }
-
-function SetupScreen() { return <main className="setup-shell"><section className="setup-card"><p className="eyebrow">Setup needed</p><h1>Your portfolio starter is ready.</h1><p>Connect it to Supabase to turn this into a live, database-backed portfolio.</p></section></main> }
-function StatusScreen({ title = 'One moment', message, detail }: { title?: string; message: string; detail?: React.ReactNode }) { return <section className="status-screen" aria-live="polite"><p className="eyebrow">{title}</p><h1>{message}</h1>{detail ? <p>{detail}</p> : null}</section> }
 
 export default App
